@@ -5,8 +5,9 @@ const mocks = vi.hoisted(() => ({
 	execAsync: vi.fn(),
 	execAsyncRemote: vi.fn(),
 	findServerById: vi.fn(),
+	getLastAdvancedStatsFile: vi.fn(() => Promise.resolve({})),
 	listContainers: vi.fn(),
-	recordAdvancedStats: vi.fn(() => Promise.resolve()),
+	recordAdvancedStats: vi.fn<() => Promise<unknown>>(() => Promise.resolve()),
 }));
 
 vi.mock("ws", () => ({
@@ -33,7 +34,7 @@ vi.mock("@dokploy/server", () => ({
 	execAsyncRemote: mocks.execAsyncRemote,
 	findServerById: mocks.findServerById,
 	getHostSystemStats: vi.fn(),
-	getLastAdvancedStatsFile: vi.fn(() => Promise.resolve({})),
+	getLastAdvancedStatsFile: mocks.getLastAdvancedStatsFile,
 	IS_CLOUD: false,
 	recordAdvancedStats: mocks.recordAdvancedStats,
 	validateRequest: vi.fn(() =>
@@ -142,6 +143,42 @@ describe("Docker stats monitoring", () => {
 		);
 		expect(mocks.listContainers).not.toHaveBeenCalled();
 		expect(ws.send).toHaveBeenCalledOnce();
+	});
+
+	it("sends the recorded sample without rereading stats history", async () => {
+		const recordedSample = {
+			cpu: { value: "1%", time: new Date() },
+			memory: { value: { used: "1MiB", total: "2MiB" }, time: new Date() },
+			block: { value: { readMb: "0B", writeMb: "0B" }, time: new Date() },
+			network: { value: { inputMb: "0B", outputMb: "0B" }, time: new Date() },
+			disk: null,
+		};
+		mocks.listContainers.mockResolvedValueOnce([
+			{ Id: "container-1", State: "running" },
+		]);
+		mocks.recordAdvancedStats.mockResolvedValueOnce(recordedSample);
+
+		setupDockerStatsMonitoringSocketServer({ on: vi.fn() } as never);
+		const socketHandlers = new Map<string, () => void>();
+		const ws = {
+			on: vi.fn((event: string, handler: () => void) => {
+				socketHandlers.set(event, handler);
+			}),
+			send: vi.fn(),
+			close: vi.fn(() => socketHandlers.get("close")?.()),
+		};
+		await mocks.wssHandlers.get("connection")?.(ws, {
+			url: "/listen-docker-stats-monitoring?appName=app&appType=application",
+			headers: { host: "localhost" },
+		});
+
+		vi.advanceTimersByTime(1300);
+		await flush();
+
+		expect(mocks.getLastAdvancedStatsFile).not.toHaveBeenCalled();
+		expect(ws.send).toHaveBeenCalledWith(
+			JSON.stringify({ data: recordedSample }),
+		);
 	});
 
 	it("selects local stack containers by their stack namespace", async () => {
