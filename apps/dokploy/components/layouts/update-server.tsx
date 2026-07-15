@@ -27,7 +27,7 @@ export const UpdateServerButton = () => {
 
 	useEffect(() => {
 		// Handling of automatic check for server updates
-		if (isCloud) {
+		if (isCloud !== false) {
 			return;
 		}
 
@@ -71,7 +71,7 @@ export const UpdateServerButton = () => {
 		return () => {
 			clearUpdatesInterval();
 		};
-	}, []);
+	}, [isCloud]);
 
 	return !isCloud && updateData.updateAvailable ? (
 		<div className="border-t pt-4">
