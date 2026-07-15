@@ -17,6 +17,10 @@ import { DockerTerminalModal } from "../../settings/web-server/docker-terminal-m
 interface Props {
 	composeId: string;
 }
+
+export const getComposeLifecycleAction = (composeStatus?: string | null) =>
+	composeStatus === "idle" ? "start" : "stop";
+
 export const ComposeActions = ({ composeId }: Props) => {
 	const router = useRouter();
 	const { data: permissions } = api.user.getPermissions.useQuery();
@@ -35,6 +39,7 @@ export const ComposeActions = ({ composeId }: Props) => {
 		api.compose.start.useMutation();
 	const { mutateAsync: stop, isPending: isStopping } =
 		api.compose.stop.useMutation();
+	const lifecycleAction = getComposeLifecycleAction(data?.composeStatus);
 	return (
 		<div className="flex flex-row gap-4 w-full flex-wrap ">
 			<TooltipProvider delayDuration={0} disableHoverableContent={false}>
@@ -122,8 +127,7 @@ export const ComposeActions = ({ composeId }: Props) => {
 					</DialogAction>
 				)}
 				{canDeploy &&
-					(data?.composeType === "docker-compose" &&
-					data?.composeStatus === "idle" ? (
+					(lifecycleAction === "start" ? (
 						<DialogAction
 							title="Start Compose"
 							description="Are you sure you want to start this compose?"
