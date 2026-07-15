@@ -717,8 +717,8 @@ const removeLastTenDeployments = async (
 	serverId?: string | null,
 ) => {
 	const deploymentList = await getDeploymentsByType(id, type);
-	if (deploymentList.length > 10) {
-		await removeDeploymentsWithLogs(deploymentList.slice(10), serverId);
+	if (deploymentList.length >= 10) {
+		await removeDeploymentsWithLogs(deploymentList.slice(9), serverId);
 	}
 };
 

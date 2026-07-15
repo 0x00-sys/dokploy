@@ -115,3 +115,26 @@ it("falls back to the runtime server when no build server is configured", async 
 
 	expect(cleanupCall?.[0]).toBe("runtime-server");
 });
+
+it("removes the oldest log before inserting an eleventh deployment", async () => {
+	mocks.db.query.deployments.findMany.mockResolvedValue(
+		Array.from({ length: 10 }, (_, index) => ({
+			deploymentId: `deployment-${index}`,
+			logPath: `/var/lib/dokploy/logs/app-${index}.log`,
+			rollbackId: null,
+		})),
+	);
+
+	await createDeployment({
+		applicationId: "application-1",
+		title: "Deployment",
+		description: "",
+	});
+
+	const cleanupCall = mocks.execAsyncRemote.mock.calls.find(([, command]) =>
+		command.includes("rm -rf"),
+	);
+
+	expect(cleanupCall?.[0]).toBe("build-server");
+	expect(cleanupCall?.[1]).toContain("rm -rf /var/lib/dokploy/logs/app-9.log");
+});
