@@ -21,34 +21,35 @@ export const recordAdvancedStats = async (
 
 	await promises.mkdir(path, { recursive: true });
 
-	await updateStatsFile(appName, "cpu", stats.CPUPerc);
-	await updateStatsFile(appName, "memory", {
+	const cpu = await updateStatsFile(appName, "cpu", stats.CPUPerc);
+	const memory = await updateStatsFile(appName, "memory", {
 		used: stats.MemUsage.split(" ")[0],
 		total: stats.MemUsage.split(" ")[2],
 	});
 
-	await updateStatsFile(appName, "block", {
+	const block = await updateStatsFile(appName, "block", {
 		readMb: stats.BlockIO.split(" ")[0],
 		writeMb: stats.BlockIO.split(" ")[2],
 	});
 
-	await updateStatsFile(appName, "network", {
+	const network = await updateStatsFile(appName, "network", {
 		inputMb: stats.NetIO.split(" ")[0],
 		outputMb: stats.NetIO.split(" ")[2],
 	});
+	let disk: Awaited<ReturnType<typeof updateStatsFile>> | null = null;
 
 	if (appName === "dokploy") {
 		const osutils = new OSUtils();
 		const diskResult = await osutils.disk.usageByMountPoint("/");
 
 		if (diskResult.success && diskResult.data) {
-			const disk = diskResult.data;
-			const diskUsage = disk.used.toGB().toFixed(2);
-			const diskTotal = disk.total.toGB().toFixed(2);
-			const diskUsedPercentage = disk.usagePercentage;
-			const diskFree = disk.available.toGB().toFixed(2);
+			const diskUsageData = diskResult.data;
+			const diskUsage = diskUsageData.used.toGB().toFixed(2);
+			const diskTotal = diskUsageData.total.toGB().toFixed(2);
+			const diskUsedPercentage = diskUsageData.usagePercentage;
+			const diskFree = diskUsageData.available.toGB().toFixed(2);
 
-			await updateStatsFile(appName, "disk", {
+			disk = await updateStatsFile(appName, "disk", {
 				diskTotal: +diskTotal,
 				diskUsedPercentage: +diskUsedPercentage,
 				diskUsage: +diskUsage,
@@ -56,6 +57,8 @@ export const recordAdvancedStats = async (
 			});
 		}
 	}
+
+	return { cpu, memory, block, network, disk };
 };
 
 /**
@@ -185,7 +188,8 @@ export const updateStatsFile = async (
 ) => {
 	const { MONITORING_PATH } = paths();
 	const stats = await readStatsFile(appName, statType);
-	stats.push({ value, time: new Date() });
+	const entry = { value, time: new Date() };
+	stats.push(entry);
 
 	if (stats.length > 288) {
 		stats.shift();
@@ -196,6 +200,7 @@ export const updateStatsFile = async (
 		`${MONITORING_PATH}/${appName}/${statType}.json`,
 		content,
 	);
+	return entry;
 };
 
 export const readLastValueStatsFile = async (

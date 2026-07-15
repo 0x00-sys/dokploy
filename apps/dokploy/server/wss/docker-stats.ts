@@ -5,7 +5,6 @@ import {
 	execAsyncRemote,
 	findServerById,
 	getHostSystemStats,
-	getLastAdvancedStatsFile,
 	IS_CLOUD,
 	recordAdvancedStats,
 	validateRequest,
@@ -79,8 +78,7 @@ export const setupDockerStatsMonitoringSocketServer = (
 				if (appName === "dokploy") {
 					const stat = await getHostSystemStats();
 
-					await recordAdvancedStats(stat, appName);
-					const data = await getLastAdvancedStatsFile(appName);
+					const data = await recordAdvancedStats(stat, appName);
 
 					ws.send(
 						JSON.stringify({
@@ -142,8 +140,7 @@ export const setupDockerStatsMonitoringSocketServer = (
 				}
 				const stat = JSON.parse(stdout);
 
-				await recordAdvancedStats(stat, appName);
-				const data = await getLastAdvancedStatsFile(appName);
+				const data = await recordAdvancedStats(stat, appName);
 
 				ws.send(
 					JSON.stringify({
