@@ -7,17 +7,22 @@ import {
 	Pause,
 	Play,
 } from "lucide-react";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { AlertBlock } from "@/components/shared/alert-block";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/utils/api";
 import { AnalyzeLogs } from "./analyze-logs";
 import { LineCountFilter } from "./line-count-filter";
+import {
+	appendRuntimeLogChunk,
+	cloneRuntimeLogBuffer,
+	createRuntimeLogBuffer,
+} from "./runtime-log-buffer";
 import { SinceLogsFilter, type TimeFilter } from "./since-logs-filter";
 import { StatusLogsFilter } from "./status-logs-filter";
-import { TerminalLine } from "./terminal-line";
-import { appendLogChunk, getLogType, type LogLine, parseLogs } from "./utils";
+import { getLogType } from "./utils";
+import { VirtualizedRuntimeLogs } from "./virtualized-runtime-logs";
 
 interface Props {
 	containerId: string;
@@ -66,8 +71,11 @@ export const DockerLogsId: React.FC<Props> = ({
 		},
 	);
 
-	const [rawLogs, setRawLogs] = React.useState("");
-	const [filteredLogs, setFilteredLogs] = React.useState<LogLine[]>([]);
+	const logBufferRef = useRef(createRuntimeLogBuffer(100));
+	const pausedLogBufferRef = useRef<ReturnType<
+		typeof createRuntimeLogBuffer
+	> | null>(null);
+	const [logVersion, setLogVersion] = React.useState(0);
 	const [autoScroll, setAutoScroll] = React.useState(true);
 	const [lines, setLines] = React.useState<number>(100);
 	const [search, setSearch] = React.useState<string>("");
@@ -75,7 +83,6 @@ export const DockerLogsId: React.FC<Props> = ({
 	const [since, setSince] = React.useState<TimeFilter>("all");
 	const [typeFilter, setTypeFilter] = React.useState<string[]>([]);
 	const [isPaused, setIsPaused] = React.useState(false);
-	const messageBufferRef = useRef("");
 	const hasBufferedMessagesRef = useRef(false);
 	const [hasBufferedMessages, setHasBufferedMessages] = React.useState(false);
 	const isPausedRef = useRef(false);
@@ -83,10 +90,16 @@ export const DockerLogsId: React.FC<Props> = ({
 	const [isLoading, setIsLoading] = React.useState(false);
 	const [copied, setCopied] = React.useState(false);
 
-	const clearMessageBuffer = () => {
-		messageBufferRef.current = "";
+	const clearBufferedMessages = () => {
 		hasBufferedMessagesRef.current = false;
 		setHasBufferedMessages(false);
+	};
+
+	const resetLogBuffers = (lineLimit: number) => {
+		logBufferRef.current = createRuntimeLogBuffer(lineLimit);
+		pausedLogBufferRef.current = null;
+		clearBufferedMessages();
+		setLogVersion((version) => version + 1);
 	};
 
 	const scrollToBottom = () => {
@@ -108,28 +121,23 @@ export const DockerLogsId: React.FC<Props> = ({
 	};
 
 	const handleLines = (lines: number) => {
-		setRawLogs("");
-		setFilteredLogs([]);
-		clearMessageBuffer();
 		setLines(lines);
 	};
 
 	const handleSince = (value: TimeFilter) => {
-		setRawLogs("");
-		setFilteredLogs([]);
-		clearMessageBuffer();
 		setSince(value);
 	};
 
 	const handlePauseResume = () => {
 		if (isPaused) {
-			// Resume: Apply all buffered messages
-			if (messageBufferRef.current) {
-				setRawLogs((prev) =>
-					appendLogChunk(prev, messageBufferRef.current, lines),
-				);
-				clearMessageBuffer();
+			if (pausedLogBufferRef.current) {
+				logBufferRef.current = pausedLogBufferRef.current;
+				pausedLogBufferRef.current = null;
+				setLogVersion((version) => version + 1);
 			}
+			clearBufferedMessages();
+		} else {
+			pausedLogBufferRef.current = cloneRuntimeLogBuffer(logBufferRef.current);
 		}
 		const newPausedState = !isPaused;
 		setIsPaused(newPausedState);
@@ -142,9 +150,7 @@ export const DockerLogsId: React.FC<Props> = ({
 		let isCurrentConnection = true;
 		let noDataTimeout: NodeJS.Timeout;
 		setIsLoading(true);
-		setRawLogs("");
-		setFilteredLogs([]);
-		clearMessageBuffer();
+		resetLogBuffers(lines);
 		// Reset pause state when container changes
 		setIsPaused(false);
 		isPausedRef.current = false;
@@ -187,19 +193,16 @@ export const DockerLogsId: React.FC<Props> = ({
 		ws.onmessage = (e) => {
 			if (!isCurrentConnection) return;
 
-			if (isPausedRef.current) {
-				messageBufferRef.current = appendLogChunk(
-					messageBufferRef.current,
-					e.data,
-					lines,
-				);
+			const pausedBuffer = pausedLogBufferRef.current;
+			if (isPausedRef.current && pausedBuffer) {
+				appendRuntimeLogChunk(pausedBuffer, String(e.data));
 				if (!hasBufferedMessagesRef.current) {
 					hasBufferedMessagesRef.current = true;
 					setHasBufferedMessages(true);
 				}
 			} else {
-				// When not paused, display messages normally
-				setRawLogs((prev) => appendLogChunk(prev, e.data, lines));
+				appendRuntimeLogChunk(logBufferRef.current, String(e.data));
+				setLogVersion((version) => version + 1);
 			}
 
 			setIsLoading(false);
@@ -225,7 +228,7 @@ export const DockerLogsId: React.FC<Props> = ({
 			if (noDataTimeout) clearTimeout(noDataTimeout);
 			closeContainerLogSocket(ws);
 		};
-	}, [containerId, serverId, lines, search, since]);
+	}, [containerId, serverId, lines, search, since, runType]);
 
 	const handleDownload = () => {
 		const logContent = filteredLogs
@@ -273,17 +276,15 @@ export const DockerLogsId: React.FC<Props> = ({
 		}
 	};
 
-	const handleFilter = (logs: LogLine[]) => {
+	const filteredLogs = useMemo(() => {
+		const logs = logBufferRef.current.logs;
+		if (typeFilter.length === 0) return logs;
+
 		return logs.filter((log) => {
 			const logType = getLogType(log.message).type;
-
-			if (typeFilter.length === 0) {
-				return true;
-			}
-
 			return typeFilter.includes(logType);
 		});
-	};
+	}, [logVersion, typeFilter]);
 
 	// Sync isPausedRef with isPaused state
 	useEffect(() => {
@@ -291,24 +292,12 @@ export const DockerLogsId: React.FC<Props> = ({
 	}, [isPaused]);
 
 	useEffect(() => {
-		setRawLogs("");
-		setFilteredLogs([]);
-		clearMessageBuffer();
-	}, [containerId]);
-
-	useEffect(() => {
-		const logs = parseLogs(rawLogs);
-		const filtered = handleFilter(logs);
-		setFilteredLogs(filtered);
-	}, [rawLogs, search, lines, since, typeFilter]);
-
-	useEffect(() => {
 		scrollToBottom();
 
 		if (autoScroll && scrollRef.current) {
 			scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
 		}
-	}, [filteredLogs, autoScroll]);
+	}, [filteredLogs.length, autoScroll]);
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -410,14 +399,14 @@ export const DockerLogsId: React.FC<Props> = ({
 						className="h-[720px] overflow-y-auto space-y-0 border p-4 bg-[#fafafa] dark:bg-[#050506] rounded custom-logs-scrollbar"
 					>
 						{filteredLogs.length > 0 ? (
-							filteredLogs.map((filteredLog: LogLine, index: number) => (
-								<TerminalLine
-									key={`${filteredLog.rawTimestamp ?? ""}-${index}`}
-									log={filteredLog}
-									searchTerm={search}
-									noTimestamp={!showTimestamp}
-								/>
-							))
+							<VirtualizedRuntimeLogs
+								logs={filteredLogs}
+								scrollRef={scrollRef}
+								autoScroll={autoScroll}
+								searchTerm={search}
+								showTimestamp={showTimestamp}
+								version={logVersion}
+							/>
 						) : isLoading ? (
 							<div className="flex justify-center items-center h-full text-muted-foreground">
 								<Loader2 className="h-6 w-6 animate-spin" />
