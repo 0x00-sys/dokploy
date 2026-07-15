@@ -17,7 +17,7 @@ import { LineCountFilter } from "./line-count-filter";
 import { SinceLogsFilter, type TimeFilter } from "./since-logs-filter";
 import { StatusLogsFilter } from "./status-logs-filter";
 import { TerminalLine } from "./terminal-line";
-import { getLogType, type LogLine, parseLogs } from "./utils";
+import { appendLogChunk, getLogType, type LogLine, parseLogs } from "./utils";
 
 interface Props {
 	containerId: string;
@@ -72,11 +72,19 @@ export const DockerLogsId: React.FC<Props> = ({
 	const [since, setSince] = React.useState<TimeFilter>("all");
 	const [typeFilter, setTypeFilter] = React.useState<string[]>([]);
 	const [isPaused, setIsPaused] = React.useState(false);
-	const [messageBuffer, setMessageBuffer] = React.useState<string[]>([]);
+	const messageBufferRef = useRef("");
+	const hasBufferedMessagesRef = useRef(false);
+	const [hasBufferedMessages, setHasBufferedMessages] = React.useState(false);
 	const isPausedRef = useRef(false);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [isLoading, setIsLoading] = React.useState(false);
 	const [copied, setCopied] = React.useState(false);
+
+	const clearMessageBuffer = () => {
+		messageBufferRef.current = "";
+		hasBufferedMessagesRef.current = false;
+		setHasBufferedMessages(false);
+	};
 
 	const scrollToBottom = () => {
 		if (autoScroll && scrollRef.current) {
@@ -99,31 +107,25 @@ export const DockerLogsId: React.FC<Props> = ({
 	const handleLines = (lines: number) => {
 		setRawLogs("");
 		setFilteredLogs([]);
-		setMessageBuffer([]);
+		clearMessageBuffer();
 		setLines(lines);
 	};
 
 	const handleSince = (value: TimeFilter) => {
 		setRawLogs("");
 		setFilteredLogs([]);
-		setMessageBuffer([]);
+		clearMessageBuffer();
 		setSince(value);
 	};
 
 	const handlePauseResume = () => {
 		if (isPaused) {
 			// Resume: Apply all buffered messages
-			if (messageBuffer.length > 0) {
-				const bufferedContent = messageBuffer.join("");
-				setRawLogs((prev) => {
-					const updated = prev + bufferedContent;
-					const splitLines = updated.split("\n");
-					if (splitLines.length > lines) {
-						return splitLines.slice(-lines).join("\n");
-					}
-					return updated;
-				});
-				setMessageBuffer([]);
+			if (messageBufferRef.current) {
+				setRawLogs((prev) =>
+					appendLogChunk(prev, messageBufferRef.current, lines),
+				);
+				clearMessageBuffer();
 			}
 		}
 		const newPausedState = !isPaused;
@@ -139,7 +141,7 @@ export const DockerLogsId: React.FC<Props> = ({
 		setIsLoading(true);
 		setRawLogs("");
 		setFilteredLogs([]);
-		setMessageBuffer([]);
+		clearMessageBuffer();
 		// Reset pause state when container changes
 		setIsPaused(false);
 		isPausedRef.current = false;
@@ -183,18 +185,18 @@ export const DockerLogsId: React.FC<Props> = ({
 			if (!isCurrentConnection) return;
 
 			if (isPausedRef.current) {
-				// When paused, buffer the messages instead of displaying them
-				setMessageBuffer((prev) => [...prev, e.data]);
+				messageBufferRef.current = appendLogChunk(
+					messageBufferRef.current,
+					e.data,
+					lines,
+				);
+				if (!hasBufferedMessagesRef.current) {
+					hasBufferedMessagesRef.current = true;
+					setHasBufferedMessages(true);
+				}
 			} else {
 				// When not paused, display messages normally
-				setRawLogs((prev) => {
-					const updated = prev + e.data;
-					const splitLines = updated.split("\n");
-					if (splitLines.length > lines) {
-						return splitLines.slice(-lines).join("\n");
-					}
-					return updated;
-				});
+				setRawLogs((prev) => appendLogChunk(prev, e.data, lines));
 			}
 
 			setIsLoading(false);
@@ -290,7 +292,7 @@ export const DockerLogsId: React.FC<Props> = ({
 	useEffect(() => {
 		setRawLogs("");
 		setFilteredLogs([]);
-		setMessageBuffer([]);
+		clearMessageBuffer();
 	}, [containerId]);
 
 	useEffect(() => {
@@ -392,9 +394,9 @@ export const DockerLogsId: React.FC<Props> = ({
 								<Pause className="size-4" />
 								<span>
 									Logs paused
-									{messageBuffer.length > 0 && (
+									{hasBufferedMessages && (
 										<span className="ml-1 font-medium">
-											({messageBuffer.length} messages buffered)
+											(new messages buffered)
 										</span>
 									)}
 								</span>
