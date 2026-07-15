@@ -144,6 +144,74 @@ describe("Docker stats monitoring", () => {
 		expect(ws.send).toHaveBeenCalledOnce();
 	});
 
+	it("selects local stack containers by their stack namespace", async () => {
+		mocks.listContainers.mockResolvedValueOnce([
+			{ Id: "container-1", State: "running" },
+		]);
+
+		const server = { on: vi.fn() };
+		setupDockerStatsMonitoringSocketServer(server as never);
+
+		const socketHandlers = new Map<string, () => void>();
+		const ws = {
+			on: vi.fn((event: string, handler: () => void) => {
+				socketHandlers.set(event, handler);
+			}),
+			send: vi.fn(),
+			close: vi.fn(() => socketHandlers.get("close")?.()),
+		};
+		const connection = mocks.wssHandlers.get("connection");
+		await connection?.(ws, {
+			url: "/listen-docker-stats-monitoring?appName=app&appType=stack",
+			headers: { host: "localhost" },
+		});
+
+		vi.advanceTimersByTime(1300);
+		await flush();
+
+		expect(mocks.listContainers).toHaveBeenCalledWith({
+			filters: JSON.stringify({
+				status: ["running"],
+				label: ["com.docker.stack.namespace=app"],
+			}),
+		});
+	});
+
+	it("selects remote stack containers by their stack namespace", async () => {
+		mocks.execAsyncRemote.mockResolvedValueOnce({
+			stdout:
+				'{"BlockIO":"0B / 0B","CPUPerc":"0%","Container":"app","ID":"remote-container","MemPerc":"0%","MemUsage":"0B / 0B","Name":"app","NetIO":"0B / 0B"}',
+			stderr: "",
+		});
+
+		const server = { on: vi.fn() };
+		setupDockerStatsMonitoringSocketServer(server as never);
+
+		const socketHandlers = new Map<string, () => void>();
+		const ws = {
+			on: vi.fn((event: string, handler: () => void) => {
+				socketHandlers.set(event, handler);
+			}),
+			send: vi.fn(),
+			close: vi.fn(() => socketHandlers.get("close")?.()),
+		};
+		const connection = mocks.wssHandlers.get("connection");
+		await connection?.(ws, {
+			url: "/listen-docker-stats-monitoring?appName=app&appType=stack&serverId=server-1",
+			headers: { host: "localhost" },
+		});
+
+		vi.advanceTimersByTime(1300);
+		await flush();
+
+		expect(mocks.execAsyncRemote).toHaveBeenCalledWith(
+			"server-1",
+			expect.stringMatching(
+				/docker ps .*com\.docker\.stack\.namespace=app.*docker stats/,
+			),
+		);
+	});
+
 	it("rejects a remote server from another organization", async () => {
 		mocks.findServerById.mockResolvedValue({ organizationId: "org-2" });
 		const server = { on: vi.fn() };
