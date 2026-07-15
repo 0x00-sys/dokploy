@@ -9,6 +9,8 @@ vi.mock("@dokploy/server/utils/process/execAsync", () => mocks);
 
 import {
 	removeService,
+	startService,
+	startServiceRemote,
 	stopService,
 	stopServiceRemote,
 } from "@dokploy/server/utils/docker/utils";
@@ -26,6 +28,20 @@ it("propagates a remote Docker stop failure", async () => {
 
 	await expect(stopServiceRemote("server-1", "app")).rejects.toThrow(
 		"server unavailable",
+	);
+});
+
+it("starts local and remote services with the requested replica count", async () => {
+	mocks.execAsync.mockResolvedValue({ stdout: "", stderr: "" });
+	mocks.execAsyncRemote.mockResolvedValue({ stdout: "", stderr: "" });
+
+	await startService("app", 3);
+	await startServiceRemote("server-1", "app", 4);
+
+	expect(mocks.execAsync).toHaveBeenCalledWith("docker service scale app=3 ");
+	expect(mocks.execAsyncRemote).toHaveBeenCalledWith(
+		"server-1",
+		"docker service scale app=4 ",
 	);
 });
 

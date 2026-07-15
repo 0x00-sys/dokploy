@@ -306,10 +306,12 @@ export const applicationRouter = createTRPCRouter({
 				deployment: ["create"],
 			});
 			const service = await findApplicationById(input.applicationId);
+			const replicas =
+				service.modeSwarm?.Replicated?.Replicas ?? service.replicas;
 			if (service.serverId) {
-				await startServiceRemote(service.serverId, service.appName);
+				await startServiceRemote(service.serverId, service.appName, replicas);
 			} else {
-				await startService(service.appName);
+				await startService(service.appName, replicas);
 			}
 			await updateApplicationStatus(input.applicationId, "done");
 			await audit(ctx, {
