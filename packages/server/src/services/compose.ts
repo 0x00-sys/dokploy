@@ -484,6 +484,13 @@ export const startCompose = async (composeId: string) => {
 					cwd: projectPath,
 				});
 			}
+		} else if (compose.composeType === "stack") {
+			const command = await getBuildComposeCommand(compose);
+			if (compose.serverId) {
+				await execAsyncRemote(compose.serverId, command);
+			} else {
+				await execAsync(command);
+			}
 		}
 
 		await updateCompose(composeId, {
