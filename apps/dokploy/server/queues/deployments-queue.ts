@@ -2,6 +2,7 @@ import {
 	deployApplication,
 	deployCompose,
 	deployPreviewApplication,
+	previewDeploymentExists,
 	rebuildApplication,
 	rebuildCompose,
 	rebuildPreviewApplication,
@@ -51,6 +52,10 @@ export const processDeploymentJob = async (job: InMemoryJob) => {
 				});
 			}
 		} else if (job.data.applicationType === "application-preview") {
+			if (!(await previewDeploymentExists(job.data.previewDeploymentId))) {
+				return;
+			}
+
 			await updatePreviewDeployment(job.data.previewDeploymentId, {
 				previewStatus: "running",
 			});
