@@ -573,6 +573,13 @@ export const backupRouter = createTRPCRouter({
 		})
 		.input(apiRestoreBackup)
 		.subscription(async function* ({ input, ctx, signal }) {
+			if (
+				input.databaseType === "web-server" &&
+				ctx.user.role !== "owner" &&
+				ctx.user.role !== "admin"
+			) {
+				throw new TRPCError({ code: "UNAUTHORIZED" });
+			}
 			if (input.databaseId) {
 				await checkServicePermissionAndAccess(ctx, input.databaseId, {
 					backup: ["restore"],
