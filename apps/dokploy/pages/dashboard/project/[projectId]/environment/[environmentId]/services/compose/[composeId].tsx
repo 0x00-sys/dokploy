@@ -50,6 +50,7 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useComposeRuntimeStatus } from "@/hooks/use-compose-runtime-status";
 import { UseKeyboardNav } from "@/hooks/use-keyboard-nav";
 import { appRouter } from "@/server/api/root";
 import { api } from "@/utils/api";
@@ -81,6 +82,13 @@ const Service = (
 	}, [router.query.tab]);
 
 	const { data } = api.compose.one.useQuery({ composeId });
+	const { composeStatus } = useComposeRuntimeStatus({
+		appName: data?.appName,
+		appType: data?.composeType,
+		composeStatus: data?.composeStatus,
+		poll: true,
+		serverId: data?.serverId,
+	});
 
 	const { data: auth } = api.user.get.useQuery();
 	const { data: permissions } = api.user.getPermissions.useQuery();
@@ -115,7 +123,7 @@ const Service = (
 									<CardTitle className="text-xl flex flex-row gap-2">
 										<div className="relative flex flex-row gap-4">
 											<div className="absolute -right-1 -top-2">
-												<StatusTooltip status={data?.composeStatus} />
+												<StatusTooltip status={composeStatus} />
 											</div>
 
 											<CircuitBoard className="h-6 w-6 text-muted-foreground" />
