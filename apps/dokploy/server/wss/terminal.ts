@@ -186,7 +186,12 @@ export const setupTerminalWebSocketServer = (
 				ws.send("\x1bc");
 
 				conn.shell({}, (err, stream) => {
-					if (err) throw err;
+					if (err) {
+						ws.send(`${err.message}\n`);
+						ws.close();
+						conn.end();
+						return;
+					}
 
 					stream
 						.on("close", (code: number, _signal: string) => {
