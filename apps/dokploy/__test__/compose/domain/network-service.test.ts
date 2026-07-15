@@ -2,27 +2,39 @@ import { addDokployNetworkToService } from "@dokploy/server";
 import { describe, expect, it } from "vitest";
 
 describe("addDokployNetworkToService", () => {
-	it("should add network to an empty array", () => {
+	it("preserves the implicit default network when no networks are declared", () => {
+		const result = addDokployNetworkToService(undefined);
+		expect(result).toEqual(["dokploy-network", "default"]);
+	});
+
+	it("preserves the implicit default network for an empty network list", () => {
 		const result = addDokployNetworkToService([]);
 		expect(result).toEqual(["dokploy-network", "default"]);
 	});
 
-	it("should not add duplicate network to an array", () => {
+	it("preserves the implicit default network for an empty network map", () => {
+		const result = addDokployNetworkToService({});
+		expect(result).toEqual({
+			"dokploy-network": {},
+			default: {},
+		});
+	});
+
+	it("does not add a default network to an explicit network list", () => {
 		const result = addDokployNetworkToService(["dokploy-network"]);
-		expect(result).toEqual(["dokploy-network", "default"]);
+		expect(result).toEqual(["dokploy-network"]);
 	});
 
-	it("should add network to an existing array with other networks", () => {
+	it("adds only the Dokploy network to an existing network list", () => {
 		const result = addDokployNetworkToService(["other-network"]);
-		expect(result).toEqual(["other-network", "dokploy-network", "default"]);
+		expect(result).toEqual(["other-network", "dokploy-network"]);
 	});
 
-	it("should add network to an object if networks is an object", () => {
+	it("adds only the Dokploy network to an existing network map", () => {
 		const result = addDokployNetworkToService({ "other-network": {} });
 		expect(result).toEqual({
 			"other-network": {},
 			"dokploy-network": {},
-			default: {},
 		});
 	});
 

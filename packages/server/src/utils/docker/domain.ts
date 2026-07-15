@@ -350,6 +350,11 @@ export const createDomainLabels = (
 export const addDokployNetworkToService = (
 	networkService: DefinitionsService["networks"],
 ) => {
+	const usesImplicitDefaultNetwork =
+		!networkService ||
+		(Array.isArray(networkService)
+			? networkService.length === 0
+			: Object.keys(networkService).length === 0);
 	let networks = networkService;
 	const network = "dokploy-network";
 	const defaultNetwork = "default";
@@ -361,14 +366,14 @@ export const addDokployNetworkToService = (
 		if (!networks.includes(network)) {
 			networks.push(network);
 		}
-		if (!networks.includes(defaultNetwork)) {
+		if (usesImplicitDefaultNetwork && !networks.includes(defaultNetwork)) {
 			networks.push(defaultNetwork);
 		}
 	} else if (networks && typeof networks === "object") {
 		if (!(network in networks)) {
 			networks[network] = {};
 		}
-		if (!(defaultNetwork in networks)) {
+		if (usesImplicitDefaultNetwork && !(defaultNetwork in networks)) {
 			networks[defaultNetwork] = {};
 		}
 	}
