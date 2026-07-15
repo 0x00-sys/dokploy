@@ -30,7 +30,7 @@ export const ComposeActions = ({ composeId }: Props) => {
 		{
 			composeId,
 		},
-		{ enabled: !!composeId },
+		{ enabled: !!composeId, refetchInterval: 5000 },
 	);
 	const { mutateAsync: update } = api.compose.update.useMutation();
 	const { mutateAsync: deploy } = api.compose.deploy.useMutation();
