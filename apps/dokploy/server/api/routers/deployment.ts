@@ -168,7 +168,11 @@ export const deploymentRouter = createTRPCRouter({
 		)
 		.mutation(async ({ input, ctx }) => {
 			const deployment = await findDeploymentById(input.deploymentId);
-			const serviceId = deployment.applicationId || deployment.composeId;
+			const serviceId =
+				deployment.applicationId ||
+				deployment.composeId ||
+				deployment.schedule?.applicationId ||
+				deployment.schedule?.composeId;
 			if (serviceId) {
 				await checkServicePermissionAndAccess(ctx, serviceId, {
 					deployment: ["cancel"],
@@ -213,7 +217,11 @@ export const deploymentRouter = createTRPCRouter({
 		)
 		.mutation(async ({ input, ctx }) => {
 			const deployment = await findDeploymentById(input.deploymentId);
-			const serviceId = deployment.applicationId || deployment.composeId;
+			const serviceId =
+				deployment.applicationId ||
+				deployment.composeId ||
+				deployment.schedule?.applicationId ||
+				deployment.schedule?.composeId;
 			if (serviceId) {
 				await checkServicePermissionAndAccess(ctx, serviceId, {
 					deployment: ["cancel"],
@@ -251,7 +259,11 @@ export const deploymentRouter = createTRPCRouter({
 		)
 		.query(async ({ input, ctx }) => {
 			const deployment = await findDeploymentById(input.deploymentId);
-			const serviceId = deployment.applicationId || deployment.composeId;
+			const serviceId =
+				deployment.applicationId ||
+				deployment.composeId ||
+				deployment.schedule?.applicationId ||
+				deployment.schedule?.composeId;
 			if (serviceId) {
 				await checkServicePermissionAndAccess(ctx, serviceId, {
 					deployment: ["read"],

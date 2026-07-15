@@ -82,3 +82,29 @@ it("falls back to the runtime server when no build server is recorded", async ()
 		expect.stringContaining("tail -n 100"),
 	);
 });
+
+it("checks service access for application schedule logs", async () => {
+	mocks.findDeploymentById.mockResolvedValue({
+		deploymentId: "deployment-1",
+		applicationId: null,
+		composeId: null,
+		serverId: "runtime-server",
+		buildServerId: null,
+		logPath: "/var/lib/dokploy/logs/app/deployment.log",
+		application: null,
+		compose: null,
+		schedule: {
+			applicationId: "application-1",
+			composeId: null,
+			serverId: null,
+		},
+	});
+
+	await caller.readLogs({ deploymentId: "deployment-1", tail: 100 });
+
+	expect(mocks.checkServicePermissionAndAccess).toHaveBeenCalledWith(
+		expect.anything(),
+		"application-1",
+		{ deployment: ["read"] },
+	);
+});
