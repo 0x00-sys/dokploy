@@ -88,6 +88,13 @@ export const volumeBackupsRouter = createTRPCRouter({
 					volumeBackup: ["create"],
 				});
 			}
+			const destination = await findDestinationById(input.destinationId);
+			if (destination.organizationId !== ctx.session.activeOrganizationId) {
+				throw new TRPCError({
+					code: "UNAUTHORIZED",
+					message: "You don't have access to this destination.",
+				});
+			}
 			if (IS_CLOUD && serviceType && serviceId) {
 				const existingVolumeBackups = await db.query.volumeBackups.findMany({
 					where: eq(volumeBackups[`${serviceType}Id`], serviceId),
