@@ -79,6 +79,12 @@ export async function resolveServicePath(
 
 export type Deployment = typeof deployments.$inferSelect;
 
+export const getDeploymentServerFields = (
+	serverId?: string | null,
+	buildServerId?: string | null,
+): Pick<Partial<Deployment>, "serverId" | "buildServerId"> =>
+	buildServerId ? { buildServerId } : serverId ? { serverId } : {};
+
 export const findDeploymentById = async (deploymentId: string) => {
 	const deployment = await db.query.deployments.findFirst({
 		where: eq(deployments.deploymentId, deploymentId),
@@ -157,9 +163,10 @@ export const createDeployment = async (
 				logPath: logFilePath,
 				description: deployment.description || "",
 				startedAt: new Date().toISOString(),
-				...(application.buildServerId && {
-					buildServerId: application.buildServerId,
-				}),
+				...getDeploymentServerFields(
+					application.serverId,
+					application.buildServerId,
+				),
 			})
 			.returning();
 		if (deploymentCreate.length === 0 || !deploymentCreate[0]) {
@@ -178,6 +185,10 @@ export const createDeployment = async (
 				status: "error",
 				logPath: "",
 				description: deployment.description || "",
+				...getDeploymentServerFields(
+					application.serverId,
+					application.buildServerId,
+				),
 				errorMessage: `An error have occurred: ${error instanceof Error ? error.message : error}`,
 				startedAt: new Date().toISOString(),
 				finishedAt: new Date().toISOString(),
@@ -239,6 +250,7 @@ export const createDeploymentPreview = async (
 				logPath: logFilePath,
 				description: deployment.description || "",
 				previewDeploymentId: deployment.previewDeploymentId,
+				...getDeploymentServerFields(previewDeployment.application?.serverId),
 				startedAt: new Date().toISOString(),
 			})
 			.returning();
@@ -258,6 +270,7 @@ export const createDeploymentPreview = async (
 				status: "error",
 				logPath: "",
 				description: deployment.description || "",
+				...getDeploymentServerFields(previewDeployment.application?.serverId),
 				errorMessage: `An error have occurred: ${error instanceof Error ? error.message : error}`,
 				startedAt: new Date().toISOString(),
 				finishedAt: new Date().toISOString(),
@@ -316,6 +329,7 @@ echo "Initializing deployment\n" >> ${logFilePath};
 				description: deployment.description || "",
 				status: "running",
 				logPath: logFilePath,
+				...getDeploymentServerFields(compose.serverId),
 				startedAt: new Date().toISOString(),
 			})
 			.returning();
@@ -335,6 +349,7 @@ echo "Initializing deployment\n" >> ${logFilePath};
 				status: "error",
 				logPath: "",
 				description: deployment.description || "",
+				...getDeploymentServerFields(compose.serverId),
 				errorMessage: `An error have occurred: ${error instanceof Error ? error.message : error}`,
 				startedAt: new Date().toISOString(),
 				finishedAt: new Date().toISOString(),
@@ -400,6 +415,7 @@ echo "Initializing backup\n" >> ${logFilePath};
 				description: deployment.description || "",
 				status: "running",
 				logPath: logFilePath,
+				...getDeploymentServerFields(serverId),
 				startedAt: new Date().toISOString(),
 			})
 			.returning();
@@ -419,6 +435,7 @@ echo "Initializing backup\n" >> ${logFilePath};
 				status: "error",
 				logPath: "",
 				description: deployment.description || "",
+				...getDeploymentServerFields(serverId),
 				errorMessage: `An error have occurred: ${error instanceof Error ? error.message : error}`,
 				startedAt: new Date().toISOString(),
 				finishedAt: new Date().toISOString(),
@@ -474,6 +491,7 @@ export const createDeploymentSchedule = async (
 				status: "running",
 				logPath: logFilePath,
 				description: deployment.description || "",
+				...getDeploymentServerFields(serverId),
 				startedAt: new Date().toISOString(),
 			})
 			.returning();
@@ -494,6 +512,7 @@ export const createDeploymentSchedule = async (
 				status: "error",
 				logPath: "",
 				description: deployment.description || "",
+				...getDeploymentServerFields(serverId),
 				errorMessage: `An error have occurred: ${error instanceof Error ? error.message : error}`,
 				startedAt: new Date().toISOString(),
 				finishedAt: new Date().toISOString(),
@@ -559,6 +578,7 @@ export const createDeploymentVolumeBackup = async (
 				status: "running",
 				logPath: logFilePath,
 				description: deployment.description || "",
+				...getDeploymentServerFields(serverId),
 				startedAt: new Date().toISOString(),
 			})
 			.returning();
@@ -579,6 +599,7 @@ export const createDeploymentVolumeBackup = async (
 				status: "error",
 				logPath: "",
 				description: deployment.description || "",
+				...getDeploymentServerFields(serverId),
 				errorMessage: `An error have occurred: ${error instanceof Error ? error.message : error}`,
 				startedAt: new Date().toISOString(),
 				finishedAt: new Date().toISOString(),
