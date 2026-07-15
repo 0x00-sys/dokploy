@@ -93,3 +93,33 @@ it("records cancelled compose deployments as cancelled", async () => {
 		"cancelled",
 	);
 });
+
+it("does not record an application cancellation when the deploy server rejects it", async () => {
+	mocks.cancelDeployment.mockRejectedValueOnce(
+		new Error("Cancellation failed"),
+	);
+
+	await expect(
+		applicationRouter
+			.createCaller(context)
+			.cancelDeployment({ applicationId: "application-1" }),
+	).rejects.toMatchObject({ message: "Cancellation failed" });
+
+	expect(mocks.updateApplicationStatus).not.toHaveBeenCalled();
+	expect(mocks.updateDeploymentStatus).not.toHaveBeenCalled();
+});
+
+it("does not record a compose cancellation when the deploy server rejects it", async () => {
+	mocks.cancelDeployment.mockRejectedValueOnce(
+		new Error("Cancellation failed"),
+	);
+
+	await expect(
+		composeRouter
+			.createCaller(context)
+			.cancelDeployment({ composeId: "compose-1" }),
+	).rejects.toMatchObject({ message: "Cancellation failed" });
+
+	expect(mocks.updateCompose).not.toHaveBeenCalled();
+	expect(mocks.updateDeploymentStatus).not.toHaveBeenCalled();
+});

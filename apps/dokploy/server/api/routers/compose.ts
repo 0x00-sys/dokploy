@@ -1053,6 +1053,11 @@ export const composeRouter = createTRPCRouter({
 
 			if (IS_CLOUD && compose.serverId) {
 				try {
+					await cancelDeployment({
+						composeId: input.composeId,
+						applicationType: "compose",
+					});
+
 					await updateCompose(input.composeId, {
 						composeStatus: "idle",
 					});
@@ -1063,12 +1068,6 @@ export const composeRouter = createTRPCRouter({
 							"cancelled",
 						);
 					}
-
-					await cancelDeployment({
-						composeId: input.composeId,
-						applicationType: "compose",
-					});
-
 					await audit(ctx, {
 						action: "stop",
 						resourceType: "compose",

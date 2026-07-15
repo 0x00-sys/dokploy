@@ -935,6 +935,11 @@ export const applicationRouter = createTRPCRouter({
 
 			if (IS_CLOUD && application.serverId) {
 				try {
+					await cancelDeployment({
+						applicationId: input.applicationId,
+						applicationType: "application",
+					});
+
 					await updateApplicationStatus(input.applicationId, "idle");
 
 					if (application.deployments[0]) {
@@ -943,11 +948,6 @@ export const applicationRouter = createTRPCRouter({
 							"cancelled",
 						);
 					}
-
-					await cancelDeployment({
-						applicationId: input.applicationId,
-						applicationType: "application",
-					});
 					await audit(ctx, {
 						action: "stop",
 						resourceType: "application",
