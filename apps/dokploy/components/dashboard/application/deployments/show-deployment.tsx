@@ -22,6 +22,10 @@ interface Props {
 	serverId?: string;
 	errorMessage?: string;
 }
+
+export const closeDeploymentLogSocket = (socket: Pick<WebSocket, "close">) =>
+	socket.close();
+
 export const ShowDeployment = ({
 	logPath,
 	open,
@@ -32,7 +36,6 @@ export const ShowDeployment = ({
 	const [data, setData] = useState("");
 	const [showExtraLogs, setShowExtraLogs] = useState(false);
 	const [filteredLogs, setFilteredLogs] = useState<LogLine[]>([]);
-	const wsRef = useRef<WebSocket | null>(null);
 	const [autoScroll, setAutoScroll] = useState(true);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [copied, setCopied] = useState(false);
@@ -59,7 +62,6 @@ export const ShowDeployment = ({
 
 		const wsUrl = `${protocol}//${window.location.host}/listen-deployment?logPath=${logPath}${serverId ? `&serverId=${serverId}` : ""}`;
 		const ws = new WebSocket(wsUrl);
-		wsRef.current = ws; // Store WebSocket instance in ref
 
 		ws.onmessage = (e) => {
 			setData((currentData) => currentData + e.data);
@@ -69,17 +71,10 @@ export const ShowDeployment = ({
 			console.error("WebSocket error: ", error);
 		};
 
-		ws.onclose = () => {
-			wsRef.current = null; // Clear reference on close
-		};
-
 		return () => {
-			if (wsRef.current?.readyState === WebSocket.OPEN) {
-				ws.close();
-				wsRef.current = null;
-			}
+			closeDeploymentLogSocket(ws);
 		};
-	}, [logPath, open]);
+	}, [logPath, open, serverId]);
 
 	useEffect(() => {
 		const logs = parseLogs(data);
@@ -133,12 +128,6 @@ export const ShowDeployment = ({
 				onClose();
 				if (!e) {
 					setData("");
-				}
-
-				if (wsRef.current) {
-					if (wsRef.current.readyState === WebSocket.OPEN) {
-						wsRef.current.close();
-					}
 				}
 			}}
 		>
