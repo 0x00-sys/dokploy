@@ -124,26 +124,22 @@ export const killDockerBuild = async (
 	type: "application" | "compose",
 	serverId: string | null,
 ) => {
-	try {
-		if (type === "application") {
-			const command = `pkill -2 -f "docker build"`;
+	if (type === "application") {
+		const command = `pkill -2 -f "docker build"`;
 
-			if (serverId) {
-				await execAsyncRemote(serverId, command);
-			} else {
-				await execAsync(command);
-			}
-		} else if (type === "compose") {
-			const command = `pkill -2 -f "docker compose"`;
-
-			if (serverId) {
-				await execAsyncRemote(serverId, command);
-			} else {
-				await execAsync(command);
-			}
+		if (serverId) {
+			await execAsyncRemote(serverId, command);
+		} else {
+			await execAsync(command);
 		}
-	} catch (error) {
-		console.error(error);
+	} else if (type === "compose") {
+		const command = `pkill -2 -f "docker compose"`;
+
+		if (serverId) {
+			await execAsyncRemote(serverId, command);
+		} else {
+			await execAsync(command);
+		}
 	}
 };
 
