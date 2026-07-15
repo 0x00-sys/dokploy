@@ -23,6 +23,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.findDestinationById.mockResolvedValue({
 		destinationId: "destination-1",
+		organizationId: "org-1",
 	});
 	mocks.restoreWebServerBackup.mockResolvedValue(undefined);
 });
@@ -78,4 +79,35 @@ it("still allows owners to start a web-server restore", async () => {
 		value: undefined,
 	});
 	expect(mocks.restoreWebServerBackup).toHaveBeenCalledOnce();
+});
+
+it("rejects restore destinations from another organization", async () => {
+	mocks.findDestinationById.mockResolvedValue({
+		destinationId: "destination-2",
+		organizationId: "org-2",
+	});
+	const caller = backupRouter.createCaller({
+		req: {} as never,
+		res: {} as never,
+		db: null as never,
+		session: { activeOrganizationId: "org-1" } as never,
+		user: { id: "user-1", role: "owner" } as never,
+	});
+
+	const subscription = await caller.restoreBackupWithLogs({
+		databaseId: "",
+		databaseType: "web-server",
+		backupType: "database",
+		databaseName: "dokploy",
+		backupFile: "webserver-backup.zip",
+		destinationId: "destination-2",
+		metadata: {},
+	});
+
+	await expect(
+		subscription[Symbol.asyncIterator]().next(),
+	).rejects.toMatchObject({
+		code: "UNAUTHORIZED",
+	});
+	expect(mocks.restoreWebServerBackup).not.toHaveBeenCalled();
 });
