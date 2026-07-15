@@ -1,6 +1,6 @@
 import copy from "copy-to-clipboard";
 import { Check, Copy, Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnalyzeLogs } from "@/components/dashboard/docker/logs/analyze-logs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,11 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { type LogLine, parseLogs } from "../../docker/logs/utils";
+import {
+	appendDeploymentLogChunk,
+	createDeploymentLogBuffer,
+	getVisibleDeploymentLogCount,
+} from "./deployment-log-buffer";
 import { VirtualizedDeploymentLogs } from "./virtualized-deployment-logs";
 
 interface Props {
@@ -33,9 +38,9 @@ export const ShowDeployment = ({
 	serverId,
 	errorMessage,
 }: Props) => {
-	const [data, setData] = useState("");
 	const [showExtraLogs, setShowExtraLogs] = useState(false);
-	const [filteredLogs, setFilteredLogs] = useState<LogLine[]>([]);
+	const logBufferRef = useRef(createDeploymentLogBuffer());
+	const [, setLogVersion] = useState(0);
 	const [autoScroll, setAutoScroll] = useState(true);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [copied, setCopied] = useState(false);
@@ -51,14 +56,18 @@ export const ShowDeployment = ({
 	useEffect(() => {
 		if (!open || !logPath) return;
 
-		setData("");
+		const logBuffer = createDeploymentLogBuffer();
+		logBufferRef.current = logBuffer;
+		setLogVersion((version) => version + 1);
 		const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 
 		const wsUrl = `${protocol}//${window.location.host}/listen-deployment?logPath=${logPath}${serverId ? `&serverId=${serverId}` : ""}`;
 		const ws = new WebSocket(wsUrl);
 
 		ws.onmessage = (e) => {
-			setData((currentData) => currentData + e.data);
+			if (logBufferRef.current !== logBuffer) return;
+			appendDeploymentLogChunk(logBuffer, String(e.data));
+			setLogVersion((version) => version + 1);
 		};
 
 		ws.onerror = (error) => {
@@ -70,29 +79,15 @@ export const ShowDeployment = ({
 		};
 	}, [logPath, open, serverId]);
 
-	useEffect(() => {
-		const logs = parseLogs(data);
-		let filteredLogsResult = logs;
-		if (serverId) {
-			let hideSubsequentLogs = false;
-			filteredLogsResult = logs.filter((log) => {
-				if (
-					log.message.includes(
-						"===================================EXTRA LOGS============================================",
-					)
-				) {
-					hideSubsequentLogs = true;
-					return showExtraLogs;
-				}
-				return showExtraLogs ? true : !hideSubsequentLogs;
-			});
-		}
-
-		setFilteredLogs(filteredLogsResult);
-	}, [data, showExtraLogs]);
+	const logs = logBufferRef.current.logs;
+	const visibleLogCount = getVisibleDeploymentLogCount(
+		logBufferRef.current,
+		!serverId || showExtraLogs,
+	);
 
 	const handleCopy = () => {
-		const logContent = filteredLogs
+		const logContent = logs
+			.slice(0, visibleLogCount)
 			.map(({ timestamp, message }: LogLine) =>
 				`${timestamp?.toISOString() || ""} ${message}`.trim(),
 			)
@@ -105,8 +100,13 @@ export const ShowDeployment = ({
 		}
 	};
 
-	const optionalErrors = parseLogs(errorMessage || "");
-	const displayedLogs = filteredLogs.length > 0 ? filteredLogs : optionalErrors;
+	const optionalErrors = useMemo(
+		() => parseLogs(errorMessage || ""),
+		[errorMessage],
+	);
+	const displayedLogs = visibleLogCount > 0 ? logs : optionalErrors;
+	const displayedLogCount =
+		visibleLogCount > 0 ? visibleLogCount : optionalErrors.length;
 
 	return (
 		<Dialog
@@ -114,7 +114,8 @@ export const ShowDeployment = ({
 			onOpenChange={(e) => {
 				onClose();
 				if (!e) {
-					setData("");
+					logBufferRef.current = createDeploymentLogBuffer();
+					setLogVersion((version) => version + 1);
 				}
 			}}
 		>
@@ -125,7 +126,7 @@ export const ShowDeployment = ({
 						<span className="flex items-center gap-2">
 							See all the details of this deployment |{" "}
 							<Badge variant="blank" className="text-xs">
-								{filteredLogs.length} lines
+								{visibleLogCount} lines
 							</Badge>
 						</span>
 
@@ -134,7 +135,7 @@ export const ShowDeployment = ({
 							size="sm"
 							className="h-7"
 							onClick={handleCopy}
-							disabled={filteredLogs.length === 0}
+							disabled={visibleLogCount === 0}
 						>
 							{copied ? (
 								<Check className="h-3.5 w-3.5" />
@@ -142,7 +143,11 @@ export const ShowDeployment = ({
 								<Copy className="h-3.5 w-3.5" />
 							)}
 						</Button>
-						<AnalyzeLogs logs={filteredLogs} context="build" />
+						<AnalyzeLogs
+							logs={logs}
+							logCount={visibleLogCount}
+							context="build"
+						/>
 
 						{serverId && (
 							<div className="flex items-center space-x-2">
@@ -173,6 +178,7 @@ export const ShowDeployment = ({
 					{displayedLogs.length > 0 ? (
 						<VirtualizedDeploymentLogs
 							logs={displayedLogs}
+							logCount={displayedLogCount}
 							scrollRef={scrollRef}
 							autoScroll={autoScroll}
 						/>

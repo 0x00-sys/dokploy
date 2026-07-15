@@ -8,6 +8,7 @@ const LOG_VIEWPORT_HEIGHT = 720;
 
 interface Props {
 	logs: LogLine[];
+	logCount?: number;
 	scrollRef: RefObject<HTMLDivElement | null>;
 	autoScroll: boolean;
 }
@@ -23,11 +24,12 @@ export const syncDeploymentLogScroll = (
 
 export const VirtualizedDeploymentLogs = ({
 	logs,
+	logCount = logs.length,
 	scrollRef,
 	autoScroll,
 }: Props) => {
 	const rowVirtualizer = useVirtualizer({
-		count: logs.length,
+		count: logCount,
 		getScrollElement: () => scrollRef.current,
 		estimateSize: () => ESTIMATED_LOG_ROW_HEIGHT,
 		initialRect: {
@@ -42,7 +44,7 @@ export const VirtualizedDeploymentLogs = ({
 		if (scrollRef.current) {
 			syncDeploymentLogScroll(scrollRef.current, autoScroll);
 		}
-	}, [autoScroll, logs.length, scrollRef, totalSize]);
+	}, [autoScroll, logCount, scrollRef, totalSize]);
 
 	return (
 		<div
