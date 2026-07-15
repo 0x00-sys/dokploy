@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 	getLastAdvancedStatsFile: vi.fn(() => Promise.resolve({})),
 	listContainers: vi.fn(),
 	recordAdvancedStats: vi.fn<() => Promise<unknown>>(() => Promise.resolve()),
+	validateRequest: vi.fn(),
 }));
 
 vi.mock("ws", () => ({
@@ -37,12 +38,7 @@ vi.mock("@dokploy/server", () => ({
 	getLastAdvancedStatsFile: mocks.getLastAdvancedStatsFile,
 	IS_CLOUD: false,
 	recordAdvancedStats: mocks.recordAdvancedStats,
-	validateRequest: vi.fn(() =>
-		Promise.resolve({
-			user: { id: "user-1" },
-			session: { activeOrganizationId: "org-1" },
-		}),
-	),
+	validateRequest: mocks.validateRequest,
 }));
 
 import { setupDockerStatsMonitoringSocketServer } from "@/server/wss/docker-stats";
@@ -59,6 +55,10 @@ describe("Docker stats monitoring", () => {
 		vi.clearAllMocks();
 		mocks.wssHandlers.clear();
 		mocks.findServerById.mockResolvedValue({ organizationId: "org-1" });
+		mocks.validateRequest.mockResolvedValue({
+			user: { id: "user-1" },
+			session: { activeOrganizationId: "org-1" },
+		});
 	});
 
 	afterEach(() => {
@@ -103,6 +103,45 @@ describe("Docker stats monitoring", () => {
 		await flush();
 
 		expect(mocks.listContainers).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not start polling when the socket closes during authentication", async () => {
+		let resolveAuthentication!: (value: {
+			user: { id: string };
+			session: { activeOrganizationId: string };
+		}) => void;
+		mocks.validateRequest.mockReturnValueOnce(
+			new Promise((resolve) => {
+				resolveAuthentication = resolve;
+			}),
+		);
+
+		setupDockerStatsMonitoringSocketServer({ on: vi.fn() } as never);
+		const socketHandlers = new Map<string, () => void>();
+		const ws = {
+			on: vi.fn((event: string, handler: () => void) => {
+				socketHandlers.set(event, handler);
+			}),
+			send: vi.fn(),
+			close: vi.fn(() => socketHandlers.get("close")?.()),
+		};
+		const connection = mocks.wssHandlers.get("connection")?.(ws, {
+			url: "/listen-docker-stats-monitoring?appName=app&appType=application",
+			headers: { host: "localhost" },
+		});
+
+		socketHandlers.get("close")?.();
+		resolveAuthentication({
+			user: { id: "user-1" },
+			session: { activeOrganizationId: "org-1" },
+		});
+		await connection;
+
+		vi.advanceTimersByTime(5200);
+		await flush();
+
+		expect(mocks.listContainers).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("collects stats from the selected remote server", async () => {
