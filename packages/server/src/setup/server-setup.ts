@@ -296,6 +296,7 @@ const installRequirements = async (
 				const command = server.command || defaultCommand(isBuildServer);
 				client.exec(command, (err, stream) => {
 					if (err) {
+						client.end();
 						onData?.(err.message);
 						reject(err);
 						return;
