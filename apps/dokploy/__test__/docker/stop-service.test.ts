@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -70,6 +71,84 @@ it("starts configured services with their saved replica count", async () => {
 		"server-1",
 		"docker service scale remote-app=5 ",
 	);
+});
+
+it("stops local and remote global services without scaling them", async () => {
+	mocks.execAsync.mockResolvedValue({ stdout: "", stderr: "" });
+	mocks.execAsyncRemote.mockResolvedValue({ stdout: "", stderr: "" });
+
+	await stopService("local-app", { Global: {} });
+	await stopServiceRemote("server-1", "remote-app", { Global: {} });
+
+	expect(mocks.execAsync).toHaveBeenCalledWith(
+		expect.stringContaining(
+			'docker service update --detach=true --constraint-add "$constraint" local-app',
+		),
+	);
+	expect(mocks.execAsync).toHaveBeenCalledWith(
+		expect.stringContaining("node.id==dokploy-stopped-local-app"),
+	);
+	expect(mocks.execAsyncRemote).toHaveBeenCalledWith(
+		"server-1",
+		expect.stringContaining(
+			'docker service update --detach=true --constraint-add "$constraint" remote-app',
+		),
+	);
+});
+
+it("starts local and remote global services by removing the stop constraint", async () => {
+	mocks.execAsync.mockResolvedValue({ stdout: "", stderr: "" });
+	mocks.execAsyncRemote.mockResolvedValue({ stdout: "", stderr: "" });
+
+	await startConfiguredService({
+		appName: "local-app",
+		serverId: null,
+		replicas: 1,
+		modeSwarm: { Global: {} },
+	});
+	await startConfiguredService({
+		appName: "remote-app",
+		serverId: "server-1",
+		replicas: 1,
+		modeSwarm: { Global: {} },
+	});
+
+	expect(mocks.execAsync).toHaveBeenCalledWith(
+		expect.stringContaining(
+			'docker service update --constraint-rm "$constraint" local-app',
+		),
+	);
+	expect(mocks.execAsyncRemote).toHaveBeenCalledWith(
+		"server-1",
+		expect.stringContaining(
+			'docker service update --constraint-rm "$constraint" remote-app',
+		),
+	);
+});
+
+it("propagates a global service inspect failure instead of reporting success", async () => {
+	mocks.execAsync.mockResolvedValue({ stdout: "", stderr: "" });
+
+	await startConfiguredService({
+		appName: "local-app",
+		serverId: null,
+		replicas: 1,
+		modeSwarm: { Global: {} },
+	});
+
+	const command = mocks.execAsync.mock.calls[0]?.[0];
+	expect(command).toEqual(expect.any(String));
+	const result = spawnSync(
+		"sh",
+		[
+			"-c",
+			`docker() { return 42; }
+${command}`,
+		],
+		{ encoding: "utf8" },
+	);
+
+	expect(result.status).toBe(42);
 });
 
 it("propagates a local Docker service removal failure", async () => {

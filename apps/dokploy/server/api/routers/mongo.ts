@@ -168,9 +168,9 @@ export const mongoRouter = createTRPCRouter({
 			const mongo = await findMongoById(input.mongoId);
 
 			if (mongo.serverId) {
-				await stopServiceRemote(mongo.serverId, mongo.appName);
+				await stopServiceRemote(mongo.serverId, mongo.appName, mongo.modeSwarm);
 			} else {
-				await stopService(mongo.appName);
+				await stopService(mongo.appName, mongo.modeSwarm);
 			}
 			await updateMongoById(input.mongoId, {
 				applicationStatus: "idle",
@@ -301,9 +301,9 @@ export const mongoRouter = createTRPCRouter({
 			});
 			const mongo = await findMongoById(input.mongoId);
 			if (mongo.serverId) {
-				await stopServiceRemote(mongo.serverId, mongo.appName);
+				await stopServiceRemote(mongo.serverId, mongo.appName, mongo.modeSwarm);
 			} else {
-				await stopService(mongo.appName);
+				await stopService(mongo.appName, mongo.modeSwarm);
 			}
 			await updateMongoById(input.mongoId, {
 				applicationStatus: "idle",

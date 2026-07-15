@@ -171,9 +171,13 @@ export const postgresRouter = createTRPCRouter({
 			});
 			const postgres = await findPostgresById(input.postgresId);
 			if (postgres.serverId) {
-				await stopServiceRemote(postgres.serverId, postgres.appName);
+				await stopServiceRemote(
+					postgres.serverId,
+					postgres.appName,
+					postgres.modeSwarm,
+				);
 			} else {
-				await stopService(postgres.appName);
+				await stopService(postgres.appName, postgres.modeSwarm);
 			}
 			await updatePostgresById(input.postgresId, {
 				applicationStatus: "idle",
@@ -368,9 +372,13 @@ export const postgresRouter = createTRPCRouter({
 			});
 			const postgres = await findPostgresById(input.postgresId);
 			if (postgres.serverId) {
-				await stopServiceRemote(postgres.serverId, postgres.appName);
+				await stopServiceRemote(
+					postgres.serverId,
+					postgres.appName,
+					postgres.modeSwarm,
+				);
 			} else {
-				await stopService(postgres.appName);
+				await stopService(postgres.appName, postgres.modeSwarm);
 			}
 			await updatePostgresById(input.postgresId, {
 				applicationStatus: "idle",

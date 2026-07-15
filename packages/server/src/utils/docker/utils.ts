@@ -109,12 +109,44 @@ export const containerExists = async (containerName: string) => {
 	}
 };
 
-export const stopService = async (appName: string) => {
-	await execAsync(`docker service scale ${appName}=0 `);
+const getGlobalServiceStopConstraint = (appName: string) =>
+	`node.id==dokploy-stopped-${appName}`;
+
+const getGlobalServiceConstraints = (appName: string) =>
+	`docker service inspect --format '{{range .Spec.TaskTemplate.Placement.Constraints}}{{println .}}{{end}}' ${appName}`;
+
+const getStopGlobalServiceCommand = (appName: string) => {
+	const constraint = getGlobalServiceStopConstraint(appName);
+	return `constraint='${constraint}'; constraints="$(${getGlobalServiceConstraints(appName)})" || exit $?; if ! printf '%s\n' "$constraints" | grep -Fxq "$constraint"; then docker service update --detach=true --constraint-add "$constraint" ${appName}; fi`;
 };
 
-export const stopServiceRemote = async (serverId: string, appName: string) => {
-	await execAsyncRemote(serverId, `docker service scale ${appName}=0 `);
+const getStartGlobalServiceCommand = (appName: string) => {
+	const constraint = getGlobalServiceStopConstraint(appName);
+	return `constraint='${constraint}'; constraints="$(${getGlobalServiceConstraints(appName)})" || exit $?; if printf '%s\n' "$constraints" | grep -Fxq "$constraint"; then docker service update --constraint-rm "$constraint" ${appName}; fi`;
+};
+
+export const stopService = async (
+	appName: string,
+	modeSwarm?: ServiceModeSwarm | null,
+) => {
+	await execAsync(
+		modeSwarm?.Global
+			? getStopGlobalServiceCommand(appName)
+			: `docker service scale ${appName}=0 `,
+	);
+};
+
+export const stopServiceRemote = async (
+	serverId: string,
+	appName: string,
+	modeSwarm?: ServiceModeSwarm | null,
+) => {
+	await execAsyncRemote(
+		serverId,
+		modeSwarm?.Global
+			? getStopGlobalServiceCommand(appName)
+			: `docker service scale ${appName}=0 `,
+	);
 };
 
 export const getContainerByName = (name: string): Promise<ContainerInfo> => {
@@ -387,6 +419,13 @@ export const startConfiguredService = async (service: {
 	replicas: number;
 	modeSwarm?: ServiceModeSwarm | null;
 }) => {
+	if (service.modeSwarm?.Global) {
+		const command = getStartGlobalServiceCommand(service.appName);
+		return service.serverId
+			? execAsyncRemote(service.serverId, command)
+			: execAsync(command);
+	}
+
 	const replicas = resolveServiceReplicas(service);
 	return service.serverId
 		? startServiceRemote(service.serverId, service.appName, replicas)

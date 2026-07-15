@@ -158,9 +158,9 @@ export const redisRouter = createTRPCRouter({
 			});
 			const redis = await findRedisById(input.redisId);
 			if (redis.serverId) {
-				await stopServiceRemote(redis.serverId, redis.appName);
+				await stopServiceRemote(redis.serverId, redis.appName, redis.modeSwarm);
 			} else {
-				await stopService(redis.appName);
+				await stopService(redis.appName, redis.modeSwarm);
 			}
 			await updateRedisById(input.redisId, {
 				applicationStatus: "idle",
@@ -187,9 +187,9 @@ export const redisRouter = createTRPCRouter({
 			});
 			const redis = await findRedisById(input.redisId);
 			if (redis.serverId) {
-				await stopServiceRemote(redis.serverId, redis.appName);
+				await stopServiceRemote(redis.serverId, redis.appName, redis.modeSwarm);
 			} else {
-				await stopService(redis.appName);
+				await stopService(redis.appName, redis.modeSwarm);
 			}
 			await updateRedisById(input.redisId, {
 				applicationStatus: "idle",

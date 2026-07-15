@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
 	findApplicationById: vi.fn(),
 	killDockerBuild: vi.fn(),
 	startConfiguredService: vi.fn(),
+	stopService: vi.fn(),
+	stopServiceRemote: vi.fn(),
 	updateApplicationStatus: vi.fn(),
 }));
 
@@ -13,6 +15,8 @@ vi.mock("@dokploy/server", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@dokploy/server")>()),
 	findApplicationById: mocks.findApplicationById,
 	startConfiguredService: mocks.startConfiguredService,
+	stopService: mocks.stopService,
+	stopServiceRemote: mocks.stopServiceRemote,
 	updateApplicationStatus: mocks.updateApplicationStatus,
 }));
 
@@ -52,6 +56,8 @@ beforeEach(() => {
 	});
 	mocks.killDockerBuild.mockResolvedValue(undefined);
 	mocks.startConfiguredService.mockResolvedValue(undefined);
+	mocks.stopService.mockResolvedValue(undefined);
+	mocks.stopServiceRemote.mockResolvedValue(undefined);
 	mocks.updateApplicationStatus.mockResolvedValue(undefined);
 });
 
@@ -93,4 +99,22 @@ it("starts applications through the configured service path", async () => {
 	await caller.start({ applicationId: "application-1" });
 
 	expect(mocks.startConfiguredService).toHaveBeenCalledWith(application);
+});
+
+it("stops applications with their configured service mode", async () => {
+	const modeSwarm = { Global: {} };
+	mocks.findApplicationById.mockResolvedValue({
+		applicationId: "application-1",
+		appName: "app-1",
+		serverId: "runtime-server",
+		modeSwarm,
+	});
+
+	await caller.stop({ applicationId: "application-1" });
+
+	expect(mocks.stopServiceRemote).toHaveBeenCalledWith(
+		"runtime-server",
+		"app-1",
+		modeSwarm,
+	);
 });
