@@ -118,6 +118,26 @@ beforeEach(() => {
 });
 
 describe("serverSetup", () => {
+	it("closes SSH when the setup command channel cannot be opened", async () => {
+		sshMock.exec.mockImplementationOnce(
+			(_command: string, callback: (error: Error) => void) =>
+				callback(new Error("Unable to open command channel")),
+		);
+		const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+		try {
+			await serverSetup("server-1");
+
+			expect(sshMock.end).toHaveBeenCalledOnce();
+			expect(mocks.updateDeploymentStatus).toHaveBeenCalledWith(
+				"deployment-1",
+				"error",
+			);
+		} finally {
+			consoleSpy.mockRestore();
+		}
+	});
+
 	it("marks setup as failed when the remote command exits unsuccessfully", async () => {
 		const stream = createStream();
 		sshMock.exec.mockImplementationOnce(
