@@ -52,13 +52,35 @@ export const createCertificate = async (
 
 	const cer = certificate[0];
 
-	createCertificateFiles(cer);
+	try {
+		await createCertificateFiles(cer);
+	} catch (error) {
+		const cleanupResults = await Promise.allSettled([
+			removeCertificateFiles(cer),
+			db
+				.delete(certificates)
+				.where(eq(certificates.certificateId, cer.certificateId)),
+		]);
+		const [fileCleanup, databaseCleanup] = cleanupResults;
+		if (fileCleanup.status === "rejected") {
+			console.error(
+				`Failed to remove certificate files for ${cer.certificateId} after creation failed`,
+				fileCleanup.reason,
+			);
+		}
+		if (databaseCleanup.status === "rejected") {
+			console.error(
+				`Failed to remove certificate ${cer.certificateId} after its files could not be created`,
+				databaseCleanup.reason,
+			);
+		}
+		throw error;
+	}
 
 	return cer;
 };
 
-export const removeCertificateById = async (certificateId: string) => {
-	const certificate = await findCertificateById(certificateId);
+const removeCertificateFiles = async (certificate: Certificate) => {
 	const { CERTIFICATES_PATH } = paths(!!certificate.serverId);
 	const certDir = path.join(CERTIFICATES_PATH, certificate.certificatePath);
 
@@ -67,6 +89,11 @@ export const removeCertificateById = async (certificateId: string) => {
 	} else {
 		await removeDirectoryIfExistsContent(certDir);
 	}
+};
+
+export const removeCertificateById = async (certificateId: string) => {
+	const certificate = await findCertificateById(certificateId);
+	await removeCertificateFiles(certificate);
 
 	const result = await db
 		.delete(certificates)
