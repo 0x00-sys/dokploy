@@ -237,6 +237,13 @@ export const backupRouter = createTRPCRouter({
 						backup: ["update"],
 					});
 				}
+				const destination = await findDestinationById(input.destinationId);
+				if (destination.organizationId !== ctx.session.activeOrganizationId) {
+					throw new TRPCError({
+						code: "UNAUTHORIZED",
+						message: "You don't have access to this destination.",
+					});
+				}
 
 				await updateBackupById(input.backupId, input);
 				const backup = await findBackupById(input.backupId);
