@@ -5,6 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import { AttachAddon } from "@xterm/addon-attach";
 import { useTheme } from "next-themes";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { disposeTerminalSession } from "./session";
 
 interface Props {
 	id: string;
@@ -50,7 +51,7 @@ export const DockerTerminal: React.FC<Props> = ({
 		term.loadAddon(addonAttach);
 		addonFit.fit();
 		return () => {
-			ws.close();
+			disposeTerminalSession(term, ws);
 		};
 	}, [containerId, activeWay, id]);
 
