@@ -50,4 +50,25 @@ describe("health polling lifecycle", () => {
 
 		expect(fetch).toHaveBeenCalledOnce();
 	});
+
+	it("keeps retrying until health recovers", async () => {
+		vi.mocked(fetch)
+			.mockResolvedValueOnce({ ok: false } as Response)
+			.mockResolvedValueOnce({ ok: true } as Response);
+		const onSuccess = vi.fn();
+		const { execute } = useHealthCheckAfterMutation({
+			initialDelay: 0,
+			pollInterval: 100,
+			successMessage: "Healthy",
+			onSuccess,
+		});
+		mocks.useEffect.mock.calls[0]?.[0]?.();
+
+		const execution = execute(() => Promise.resolve("result"));
+		await vi.advanceTimersByTimeAsync(100);
+
+		await expect(execution).resolves.toBe("result");
+		expect(fetch).toHaveBeenCalledTimes(2);
+		expect(onSuccess).toHaveBeenCalledOnce();
+	});
 });
