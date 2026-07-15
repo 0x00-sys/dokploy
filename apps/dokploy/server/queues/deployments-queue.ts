@@ -72,6 +72,24 @@ export const processDeploymentJob = async (job: InMemoryJob) => {
 			}
 		}
 	} catch (error) {
-		console.log("Error", error);
+		try {
+			if (job.data.applicationType === "application") {
+				await updateApplicationStatus(job.data.applicationId, "error");
+			} else if (job.data.applicationType === "compose") {
+				await updateCompose(job.data.composeId, {
+					composeStatus: "error",
+				});
+			} else if (job.data.applicationType === "application-preview") {
+				await updatePreviewDeployment(job.data.previewDeploymentId, {
+					previewStatus: "error",
+				});
+			}
+		} catch (statusError) {
+			console.error(
+				"Failed to record deployment job error status",
+				statusError,
+			);
+		}
+		throw error;
 	}
 };
