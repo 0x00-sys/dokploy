@@ -3,6 +3,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
 	const wssHandlers = new Map<string, (...args: any[]) => unknown>();
 	const findServerById = vi.fn();
+	const spawn = vi.fn();
+	const validateRequest = vi.fn();
 	const stderr = {
 		on: vi.fn(),
 	};
@@ -22,8 +24,10 @@ const mocks = vi.hoisted(() => {
 	return {
 		client,
 		findServerById,
+		spawn,
 		stderr,
 		stream,
+		validateRequest,
 		wssHandlers,
 	};
 });
@@ -46,16 +50,11 @@ vi.mock("ssh2", () => ({
 	}),
 }));
 
-vi.mock("node-pty", () => ({ spawn: vi.fn() }));
+vi.mock("node-pty", () => ({ spawn: mocks.spawn }));
 vi.mock("@dokploy/server", () => ({
 	findServerById: mocks.findServerById,
 	IS_CLOUD: false,
-	validateRequest: vi.fn(() =>
-		Promise.resolve({
-			user: { id: "user-1" },
-			session: { activeOrganizationId: "org-1" },
-		}),
-	),
+	validateRequest: mocks.validateRequest,
 }));
 
 import { setupDockerContainerTerminalWebSocketServer } from "@/server/wss/docker-container-terminal";
@@ -77,7 +76,92 @@ beforeEach(() => {
 		callback(null, mocks.stream);
 	});
 	mocks.client.connect.mockReturnValue(mocks.client);
+	mocks.spawn.mockReturnValue({
+		onData: vi.fn(),
+		kill: vi.fn(),
+		write: vi.fn(),
+	});
 	mocks.stream.on.mockReturnValue(mocks.stream);
+	mocks.validateRequest.mockResolvedValue({
+		user: { id: "user-1" },
+		session: { activeOrganizationId: "org-1" },
+	});
+});
+
+const openSocket = (
+	url = "/docker-container-terminal?containerId=abc123&serverId=server-1",
+) => {
+	setupDockerContainerTerminalWebSocketServer({ on: vi.fn() } as never);
+	const socketHandlers = new Map<string, Array<() => void>>();
+	const ws = {
+		on: vi.fn((event: string, handler: () => void) => {
+			const handlers = socketHandlers.get(event) ?? [];
+			handlers.push(handler);
+			socketHandlers.set(event, handlers);
+		}),
+		once: vi.fn((event: string, handler: () => void) => {
+			const handlers = socketHandlers.get(event) ?? [];
+			handlers.push(handler);
+			socketHandlers.set(event, handlers);
+		}),
+		send: vi.fn(),
+		close: vi.fn(),
+	};
+	const connection = mocks.wssHandlers.get("connection")?.(ws, {
+		url,
+		headers: { host: "localhost" },
+	});
+	return {
+		connection,
+		disconnect: () => {
+			for (const handler of socketHandlers.get("close") ?? []) handler();
+		},
+		ws,
+	};
+};
+
+it("does not start a local terminal after disconnecting during authentication", async () => {
+	let resolveAuthentication!: (value: {
+		user: { id: string };
+		session: { activeOrganizationId: string };
+	}) => void;
+	mocks.validateRequest.mockReturnValueOnce(
+		new Promise((resolve) => {
+			resolveAuthentication = resolve;
+		}),
+	);
+	const { connection, disconnect } = openSocket(
+		"/docker-container-terminal?containerId=abc123",
+	);
+
+	disconnect();
+	resolveAuthentication({
+		user: { id: "user-1" },
+		session: { activeOrganizationId: "org-1" },
+	});
+	await connection;
+
+	expect(mocks.spawn).not.toHaveBeenCalled();
+});
+
+it("does not connect SSH after disconnecting during server lookup", async () => {
+	let resolveServer!: (value: {
+		organizationId: string;
+		sshKeyId: string;
+	}) => void;
+	mocks.findServerById.mockReturnValueOnce(
+		new Promise((resolve) => {
+			resolveServer = resolve;
+		}),
+	);
+	const { connection, disconnect } = openSocket();
+	await Promise.resolve();
+
+	disconnect();
+	resolveServer({ organizationId: "org-1", sshKeyId: "key-1" });
+	await connection;
+
+	expect(mocks.client.connect).not.toHaveBeenCalled();
 });
 
 it("closes SSH when the socket disconnects before SSH is ready", async () => {

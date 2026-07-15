@@ -29,6 +29,10 @@ export const setupDockerContainerTerminalWebSocketServer = (
 	// eslint-disable-next-line @typescript-eslint/no-misused-promises
 	wssTerm.on("connection", async (ws, req) => {
 		const url = new URL(req.url || "", `http://${req.headers.host}`);
+		let isClosed = false;
+		ws.once("close", () => {
+			isClosed = true;
+		});
 		const containerId = url.searchParams.get("containerId");
 		const activeWay = url.searchParams.get("activeWay");
 		const serverId = url.searchParams.get("serverId");
@@ -61,6 +65,7 @@ export const setupDockerContainerTerminalWebSocketServer = (
 		try {
 			if (serverId) {
 				const server = await findServerById(serverId);
+				if (isClosed) return;
 
 				if (server.organizationId !== session.activeOrganizationId) {
 					ws.close();
@@ -141,6 +146,7 @@ export const setupDockerContainerTerminalWebSocketServer = (
 						privateKey: server.sshKey?.privateKey,
 					});
 			} else {
+				if (isClosed) return;
 				if (IS_CLOUD) {
 					ws.send("This feature is not available in the cloud version.");
 					ws.close();
