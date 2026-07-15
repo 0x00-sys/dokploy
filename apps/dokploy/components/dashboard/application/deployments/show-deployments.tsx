@@ -54,6 +54,9 @@ export const formatDuration = (seconds: number) => {
 	return `${minutes}m ${remainingSeconds}s`;
 };
 
+export const canDeleteDeployment = (status?: string | null) =>
+	status === "done" || status === "error" || status === "cancelled";
+
 export const ShowDeployments = ({
 	id,
 	type,
@@ -282,8 +285,7 @@ export const ShowDeployments = ({
 							const isExpanded = expandedDescriptions.has(
 								deployment.deploymentId,
 							);
-							const canDelete =
-								deployment.status === "done" || deployment.status === "error";
+							const canDelete = canDeleteDeployment(deployment.status);
 
 							return (
 								<div
