@@ -6,6 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import { AttachAddon } from "@xterm/addon-attach";
 import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { useTheme } from "next-themes";
+import { disposeTerminalSession } from "../../docker/terminal/session";
 import { getLocalServerData } from "./local-server-config";
 
 interface Props {
@@ -66,7 +67,7 @@ export const Terminal: React.FC<Props> = ({ id, serverId }) => {
 		term.loadAddon(addonAttach);
 		addonFit.fit();
 		return () => {
-			ws.close();
+			disposeTerminalSession(term, ws);
 		};
 	}, [id, serverId]);
 
