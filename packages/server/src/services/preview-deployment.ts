@@ -45,6 +45,17 @@ export const findPreviewDeploymentById = async (
 	return application;
 };
 
+export const previewDeploymentExists = async (previewDeploymentId: string) => {
+	const previewDeployment = await db.query.previewDeployments.findFirst({
+		where: eq(previewDeployments.previewDeploymentId, previewDeploymentId),
+		columns: {
+			previewDeploymentId: true,
+		},
+	});
+
+	return Boolean(previewDeployment);
+};
+
 export const removePreviewDeployment = async (previewDeploymentId: string) => {
 	try {
 		const previewDeployment =
@@ -54,6 +65,10 @@ export const removePreviewDeployment = async (previewDeploymentId: string) => {
 		);
 
 		application.appName = previewDeployment.appName;
+		await db
+			.delete(previewDeployments)
+			.where(eq(previewDeployments.previewDeploymentId, previewDeploymentId));
+
 		const cleanupOperations = [
 			async () =>
 				await removeService(application?.appName, application?.serverId),
@@ -66,13 +81,6 @@ export const removePreviewDeployment = async (previewDeploymentId: string) => {
 				await removeDirectoryCode(application?.appName, application?.serverId),
 			async () =>
 				await removeTraefikConfig(application?.appName, application?.serverId),
-			async () =>
-				await db
-					.delete(previewDeployments)
-					.where(
-						eq(previewDeployments.previewDeploymentId, previewDeploymentId),
-					)
-					.returning(),
 		];
 		for (const operation of cleanupOperations) {
 			try {

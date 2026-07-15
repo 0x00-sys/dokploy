@@ -12,6 +12,7 @@ import {
 } from "@dokploy/server/utils/builders";
 import { sendBuildErrorNotifications } from "@dokploy/server/utils/notifications/build-error";
 import { sendBuildSuccessNotifications } from "@dokploy/server/utils/notifications/build-success";
+import { createPreviewServiceIfActive } from "@dokploy/server/utils/previews/guard";
 import {
 	ExecError,
 	execAsync,
@@ -30,7 +31,7 @@ import { createTraefikConfig } from "@dokploy/server/utils/traefik/application";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import type { z } from "zod";
-import { encodeBase64 } from "../utils/docker/utils";
+import { encodeBase64, removeService } from "../utils/docker/utils";
 import { getDokployUrl } from "./admin";
 import {
 	createDeployment,
@@ -48,6 +49,7 @@ import {
 import { generateApplyPatchesCommand } from "./patch";
 import {
 	findPreviewDeploymentById,
+	previewDeploymentExists,
 	updatePreviewDeployment,
 } from "./preview-deployment";
 import { validUniqueServerAppName } from "./project";
@@ -434,7 +436,16 @@ export const deployPreviewApplication = async ({
 			} else {
 				await execAsync(commandWithLog);
 			}
-			await mechanizeDockerContainer(application);
+			const previewCreated = await createPreviewServiceIfActive({
+				previewExists: () => previewDeploymentExists(previewDeploymentId),
+				createService: () => mechanizeDockerContainer(application),
+				removeService: () =>
+					removeService(application.appName, application.serverId),
+			});
+			if (!previewCreated) {
+				await updateDeploymentStatus(deployment.deploymentId, "cancelled");
+				return false;
+			}
 		}
 		const successComment = getIssueComment(
 			application.name,
@@ -548,7 +559,16 @@ export const rebuildPreviewApplication = async ({
 		} else {
 			await execAsync(commandWithLog);
 		}
-		await mechanizeDockerContainer(application);
+		const previewCreated = await createPreviewServiceIfActive({
+			previewExists: () => previewDeploymentExists(previewDeploymentId),
+			createService: () => mechanizeDockerContainer(application),
+			removeService: () =>
+				removeService(application.appName, application.serverId),
+		});
+		if (!previewCreated) {
+			await updateDeploymentStatus(deployment.deploymentId, "cancelled");
+			return false;
+		}
 
 		const successComment = getIssueComment(
 			application.name,
