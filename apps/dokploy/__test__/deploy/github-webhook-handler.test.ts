@@ -12,6 +12,14 @@ const mocks = vi.hoisted(() => ({
 	queueAdd: vi.fn(),
 	verify: vi.fn(),
 	shouldDeploy: vi.fn(),
+	normalizeChangedFilesFromCommits: vi.fn(
+		(commits: Array<Record<"added" | "modified" | "removed", string[]>>) =>
+			commits.flatMap((commit) => [
+				...(commit.added ?? []),
+				...(commit.modified ?? []),
+				...(commit.removed ?? []),
+			]),
+	),
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -62,6 +70,7 @@ vi.mock("@dokploy/server/db", () => ({
 
 vi.mock("@dokploy/server", () => ({
 	IS_CLOUD: false,
+	normalizeChangedFilesFromCommits: mocks.normalizeChangedFilesFromCommits,
 	shouldDeploy: mocks.shouldDeploy,
 	checkUserRepositoryPermissions: vi.fn(),
 	createPreviewDeployment: vi.fn(),
