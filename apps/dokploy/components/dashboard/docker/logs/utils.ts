@@ -104,6 +104,15 @@ export const getLogType = (message: string): LogStyle => {
 	}
 
 	const lowerMessage = message.toLowerCase();
+	const messageForErrorDetection = lowerMessage
+		.replace(
+			/["']?(?:error|err)["']?\s*[:=]\s*(?:none|null|nil|false|0|""|'')(?=\s*[,;}\]]|\s*$)/gi,
+			"",
+		)
+		.replace(
+			/["']?failed["']?\s*[:=]\s*(?:false|0|no)(?=\s*[,;}\]]|\s*$)/gi,
+			"",
+		);
 
 	if (
 		/(?:^|\s)(?:info|inf|information):?\s/i.test(lowerMessage) ||
@@ -115,16 +124,18 @@ export const getLogType = (message: string): LogStyle => {
 	}
 
 	if (
-		/(?:^|\s)(?:error|err):?\s/i.test(lowerMessage) ||
-		/\b(?:exception|failed|failure)\b/i.test(lowerMessage) ||
-		/(?:stack\s?trace):\s*$/i.test(lowerMessage) ||
-		/^\s*at\s+[\w.]+\s*\(?.+:\d+:\d+\)?/.test(lowerMessage) ||
-		/\b(?:uncaught|unhandled)\s+(?:exception|error)\b/i.test(lowerMessage) ||
-		/Error:\s.*(?:in|at)\s+.*:\d+(?::\d+)?/.test(lowerMessage) ||
-		/\b(?:errno|code):\s*(?:\d+|[A-Z_]+)\b/i.test(lowerMessage) ||
-		/\[(?:error|err|fatal)\]/i.test(lowerMessage) ||
-		/\b(?:crash|critical|fatal)\b/i.test(lowerMessage) ||
-		/\b(?:fail(?:ed|ure)?|broken|dead)\b/i.test(lowerMessage)
+		/(?:^|\s)(?:error|err):?\s/i.test(messageForErrorDetection) ||
+		/\b(?:exception|failed|failure)\b/i.test(messageForErrorDetection) ||
+		/(?:stack\s?trace):\s*$/i.test(messageForErrorDetection) ||
+		/^\s*at\s+[\w.]+\s*\(?.+:\d+:\d+\)?/.test(messageForErrorDetection) ||
+		/\b(?:uncaught|unhandled)\s+(?:exception|error)\b/i.test(
+			messageForErrorDetection,
+		) ||
+		/Error:\s.*(?:in|at)\s+.*:\d+(?::\d+)?/.test(messageForErrorDetection) ||
+		/\b(?:errno|code):\s*(?:\d+|[A-Z_]+)\b/i.test(messageForErrorDetection) ||
+		/\[(?:error|err|fatal)\]/i.test(messageForErrorDetection) ||
+		/\b(?:crash|critical|fatal)\b/i.test(messageForErrorDetection) ||
+		/\b(?:fail(?:ed|ure)?|broken|dead)\b/i.test(messageForErrorDetection)
 	) {
 		return LOG_STYLES.error;
 	}
