@@ -276,6 +276,9 @@ export const RestoreBackup = ({
 				const parsedLogs = parseLogs(log);
 				setFilteredLogs((prev) => [...prev, ...parsedLogs]);
 			},
+			onComplete() {
+				setIsDeploying(false);
+			},
 			onError(error) {
 				console.error("Restore logs error:", error);
 				setIsDeploying(false);
