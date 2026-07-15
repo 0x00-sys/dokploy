@@ -57,25 +57,25 @@ export const useHealthCheckAfterMutation = ({
 	}, []);
 
 	const pollUntilHealthy = useCallback(async (): Promise<void> => {
-		if (!isMounted.current) return;
-		const isHealthy = await checkHealth();
-		if (!isMounted.current) return;
+		while (isMounted.current) {
+			const isHealthy = await checkHealth();
+			if (!isMounted.current) return;
 
-		if (isHealthy) {
-			toast.success(successMessage);
+			if (isHealthy) {
+				toast.success(successMessage);
 
-			if (reloadOnSuccess) {
-				setTimeout(() => {
-					window.location.reload();
-				}, 2000);
-			} else {
-				await onSuccess?.();
+				if (reloadOnSuccess) {
+					setTimeout(() => {
+						window.location.reload();
+					}, 2000);
+				} else {
+					await onSuccess?.();
+				}
+				return;
 			}
-			return;
-		}
 
-		await new Promise((resolve) => setTimeout(resolve, pollInterval));
-		if (isMounted.current) await pollUntilHealthy();
+			await new Promise((resolve) => setTimeout(resolve, pollInterval));
+		}
 	}, [checkHealth, successMessage, reloadOnSuccess, onSuccess, pollInterval]);
 
 	const execute = useCallback(
