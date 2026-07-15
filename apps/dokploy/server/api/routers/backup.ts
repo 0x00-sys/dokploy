@@ -492,6 +492,9 @@ export const backupRouter = createTRPCRouter({
 	manualBackupWebServer: withPermission("backup", "create")
 		.input(apiFindOneBackup)
 		.mutation(async ({ input, ctx }) => {
+			if (ctx.user.role !== "owner" && ctx.user.role !== "admin") {
+				throw new TRPCError({ code: "UNAUTHORIZED" });
+			}
 			const backup = await findBackupById(input.backupId);
 			await runWebServerBackup(backup);
 			await keepLatestNBackups(backup);
