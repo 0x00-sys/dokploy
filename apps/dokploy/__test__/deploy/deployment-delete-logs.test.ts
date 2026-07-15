@@ -120,3 +120,58 @@ it("deletes application deployment logs from the dedicated build server", async 
 	);
 	expect(mocks.execAsync).not.toHaveBeenCalled();
 });
+
+it("checks service access before deleting compose schedule logs", async () => {
+	mocks.findDeploymentById.mockResolvedValue({
+		deploymentId: "deployment-1",
+		applicationId: null,
+		composeId: null,
+		serverId: "compose-server",
+		buildServerId: null,
+		logPath: "/var/lib/dokploy/logs/app/deployment.log",
+		application: null,
+		compose: null,
+		schedule: {
+			applicationId: null,
+			composeId: "compose-1",
+			serverId: null,
+		},
+	});
+
+	await caller.removeDeployment({ deploymentId: "deployment-1" });
+
+	expect(mocks.checkServicePermissionAndAccess).toHaveBeenCalledWith(
+		expect.anything(),
+		"compose-1",
+		{ deployment: ["cancel"] },
+	);
+});
+
+it("checks service access before inspecting a scheduled process", async () => {
+	mocks.findDeploymentById.mockResolvedValue({
+		deploymentId: "deployment-1",
+		applicationId: null,
+		composeId: null,
+		serverId: "runtime-server",
+		buildServerId: null,
+		logPath: "/var/lib/dokploy/logs/app/deployment.log",
+		pid: null,
+		application: null,
+		compose: null,
+		schedule: {
+			applicationId: "application-1",
+			composeId: null,
+			serverId: null,
+		},
+	});
+
+	await expect(
+		caller.killProcess({ deploymentId: "deployment-1" }),
+	).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+	expect(mocks.checkServicePermissionAndAccess).toHaveBeenCalledWith(
+		expect.anything(),
+		"application-1",
+		{ deployment: ["cancel"] },
+	);
+});
