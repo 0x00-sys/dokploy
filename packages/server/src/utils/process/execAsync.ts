@@ -1,4 +1,4 @@
-import { exec, execFile } from "node:child_process";
+import { exec, execFile, spawn } from "node:child_process";
 import util from "node:util";
 import { findServerById } from "@dokploy/server/services/server";
 import { Client } from "ssh2";
@@ -45,6 +45,11 @@ interface ExecOptions {
 	env?: NodeJS.ProcessEnv;
 }
 
+const MAX_STREAM_OUTPUT_BYTES = 1024 * 1024;
+
+const appendStreamOutput = (output: string, data: Buffer | string) =>
+	`${output}${data.toString()}`.slice(-MAX_STREAM_OUTPUT_BYTES);
+
 export const execAsyncStream = (
 	command: string,
 	onData?: (data: string) => void,
@@ -54,16 +59,20 @@ export const execAsyncStream = (
 		let stdoutComplete = "";
 		let stderrComplete = "";
 
-		const childProcess = exec(command, options, (error) => {
-			if (error) {
+		const childProcess = spawn(command, {
+			...options,
+			shell: true,
+		});
+
+		childProcess.on("close", (code, signal) => {
+			if (code !== 0) {
+				const reason = signal ? `signal ${signal}` : `exit code ${code}`;
 				reject(
-					new ExecError(`Command execution failed: ${error.message}`, {
+					new ExecError(`Command execution failed with ${reason}`, {
 						command,
 						stdout: stdoutComplete,
 						stderr: stderrComplete,
-						// @ts-ignore
-						exitCode: error.code,
-						originalError: error,
+						exitCode: code ?? undefined,
 					}),
 				);
 				return;
@@ -73,7 +82,7 @@ export const execAsyncStream = (
 
 		childProcess.stdout?.on("data", (data: Buffer | string) => {
 			const stringData = data.toString();
-			stdoutComplete += stringData;
+			stdoutComplete = appendStreamOutput(stdoutComplete, stringData);
 			if (onData) {
 				onData(stringData);
 			}
@@ -81,7 +90,7 @@ export const execAsyncStream = (
 
 		childProcess.stderr?.on("data", (data: Buffer | string) => {
 			const stringData = data.toString();
-			stderrComplete += stringData;
+			stderrComplete = appendStreamOutput(stderrComplete, stringData);
 			if (onData) {
 				onData(stringData);
 			}
