@@ -282,24 +282,16 @@ export const getBackupCommand = (
 
 	echo "[$(date)] Container Up: $CONTAINER_ID" >> ${logPath};
 
-	# Run the backup command and capture the exit status
-	BACKUP_OUTPUT=$(${backupCommand} 2>&1 >/dev/null) || {
-		echo "[$(date)] ❌ Error: Backup failed" >> ${logPath};
-		echo "Error: $BACKUP_OUTPUT" >> ${logPath};
-		exit 1;
-	}
+	echo "[$(date)] Starting backup upload to S3..." >> ${logPath};
 
-	echo "[$(date)] ✅ backup completed successfully" >> ${logPath};
-	echo "[$(date)] Starting upload to S3..." >> ${logPath};
-
-	# Run the upload command and capture the exit status
-	UPLOAD_OUTPUT=$(${backupCommand} | ${rcloneCommand} 2>&1 >/dev/null) || {
-		echo "[$(date)] ❌ Error: Upload to S3 failed" >> ${logPath};
+	# Stream one database dump to S3. Keep dump errors out of the backup stream.
+	UPLOAD_OUTPUT=$(${backupCommand} 2>> ${logPath} | ${rcloneCommand} 2>&1 >/dev/null) || {
+		echo "[$(date)] ❌ Error: Backup or upload failed" >> ${logPath};
 		echo "Error: $UPLOAD_OUTPUT" >> ${logPath};
 		exit 1;
 	}
 
-	echo "[$(date)] ✅ Upload to S3 completed successfully" >> ${logPath};
+	echo "[$(date)] ✅ Backup upload to S3 completed successfully" >> ${logPath};
 	echo "Backup done ✅" >> ${logPath};
 	`;
 };
