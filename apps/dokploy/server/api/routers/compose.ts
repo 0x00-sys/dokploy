@@ -1060,7 +1060,7 @@ export const composeRouter = createTRPCRouter({
 					if (compose.deployments[0]) {
 						await updateDeploymentStatus(
 							compose.deployments[0].deploymentId,
-							"done",
+							"cancelled",
 						);
 					}
 

@@ -939,7 +939,7 @@ export const applicationRouter = createTRPCRouter({
 					if (application.deployments[0]) {
 						await updateDeploymentStatus(
 							application.deployments[0].deploymentId,
-							"done",
+							"cancelled",
 						);
 					}
 
