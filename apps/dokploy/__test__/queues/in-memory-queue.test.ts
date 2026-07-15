@@ -12,6 +12,10 @@ type ApplicationJob = Extract<
 	{ applicationType: "application" }
 >;
 type ComposeJob = Extract<DeploymentJob, { applicationType: "compose" }>;
+type PreviewJob = Extract<
+	DeploymentJob,
+	{ applicationType: "application-preview" }
+>;
 
 const appJob = (applicationId: string, serverId?: string): ApplicationJob => ({
 	applicationId,
@@ -28,6 +32,20 @@ const composeJob = (composeId: string, serverId?: string): ComposeJob => ({
 	descriptionLog: "",
 	type: "deploy",
 	applicationType: "compose",
+	serverId,
+});
+
+const previewJob = (
+	applicationId: string,
+	previewDeploymentId: string,
+	serverId?: string,
+): PreviewJob => ({
+	applicationId,
+	previewDeploymentId,
+	titleLog: "deploy",
+	descriptionLog: "",
+	type: "deploy",
+	applicationType: "application-preview",
 	serverId,
 });
 
@@ -60,6 +78,15 @@ describe("getPartition / getGroup", () => {
 	it("groups applications and compose by their id", () => {
 		expect(getGroup(appJob("a"))).toBe("application:a");
 		expect(getGroup(composeJob("c"))).toBe("compose:c");
+	});
+
+	it("groups each preview deployment independently", () => {
+		expect(getGroup(previewJob("a", "preview-1"))).toBe(
+			"application-preview:preview-1",
+		);
+		expect(getGroup(previewJob("a", "preview-2"))).toBe(
+			"application-preview:preview-2",
+		);
 	});
 });
 
@@ -98,6 +125,29 @@ describe("InMemoryQueue concurrency", () => {
 
 		// A slot freed -> c starts.
 		expect(started).toEqual(["a", "b", "c"]);
+	});
+
+	it("runs distinct previews of the same application concurrently", async () => {
+		const tasks = new Map<string, ReturnType<typeof deferred>>();
+		const started: string[] = [];
+		const queue = new InMemoryQueue({ resolveConcurrency: () => 2, now });
+		queue.process(async (job) => {
+			if (job.data.applicationType !== "application-preview") return;
+			const id = job.data.previewDeploymentId;
+			started.push(id);
+			const task = deferred();
+			tasks.set(id, task);
+			await task.promise;
+		});
+
+		await queue.add(previewJob("application", "preview-1", "server"));
+		await queue.add(previewJob("application", "preview-2", "server"));
+		await flush();
+
+		expect(started).toEqual(["preview-1", "preview-2"]);
+		tasks.get("preview-1")?.release();
+		tasks.get("preview-2")?.release();
+		await flush();
 	});
 
 	it("serializes jobs of the same application (per-group FIFO)", async () => {

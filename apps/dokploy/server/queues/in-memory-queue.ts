@@ -52,6 +52,9 @@ export const getGroup = (data: DeploymentJob): string => {
 	if (data.applicationType === "compose") {
 		return `compose:${data.composeId}`;
 	}
+	if (data.applicationType === "application-preview") {
+		return `application-preview:${data.previewDeploymentId}`;
+	}
 	return `application:${data.applicationId}`;
 };
 
