@@ -24,6 +24,7 @@ export const getContainers = async (serverId?: string | null) => {
 			console.error(`Error: ${stderr}`);
 			return;
 		}
+		if (!stdout.trim()) return [];
 
 		const lines = stdout.trim().split("\n");
 
