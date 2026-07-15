@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	wssHandlers: new Map<string, (...args: any[]) => unknown>(),
+	execAsync: vi.fn(),
+	execAsyncRemote: vi.fn(),
+	findServerById: vi.fn(),
 	listContainers: vi.fn(),
 	recordAdvancedStats: vi.fn(() => Promise.resolve()),
 }));
@@ -22,13 +25,13 @@ vi.mock("@dokploy/server", () => ({
 	docker: {
 		listContainers: mocks.listContainers,
 	},
-	execAsync: vi.fn(() =>
-		Promise.resolve({
-			stdout:
-				'{"BlockIO":"0B / 0B","CPUPerc":"0%","Container":"app","ID":"container-1","MemPerc":"0%","MemUsage":"0B / 0B","Name":"app","NetIO":"0B / 0B"}',
-			stderr: "",
-		}),
-	),
+	execAsync: mocks.execAsync.mockResolvedValue({
+		stdout:
+			'{"BlockIO":"0B / 0B","CPUPerc":"0%","Container":"app","ID":"container-1","MemPerc":"0%","MemUsage":"0B / 0B","Name":"app","NetIO":"0B / 0B"}',
+		stderr: "",
+	}),
+	execAsyncRemote: mocks.execAsyncRemote,
+	findServerById: mocks.findServerById,
 	getHostSystemStats: vi.fn(),
 	getLastAdvancedStatsFile: vi.fn(() => Promise.resolve({})),
 	IS_CLOUD: false,
@@ -54,6 +57,7 @@ describe("Docker stats monitoring", () => {
 		vi.useFakeTimers();
 		vi.clearAllMocks();
 		mocks.wssHandlers.clear();
+		mocks.findServerById.mockResolvedValue({ organizationId: "org-1" });
 	});
 
 	afterEach(() => {
@@ -98,5 +102,70 @@ describe("Docker stats monitoring", () => {
 		await flush();
 
 		expect(mocks.listContainers).toHaveBeenCalledTimes(2);
+	});
+
+	it("collects stats from the selected remote server", async () => {
+		mocks.listContainers.mockResolvedValue([]);
+		mocks.execAsyncRemote
+			.mockResolvedValueOnce({ stdout: "remote-container\n", stderr: "" })
+			.mockResolvedValueOnce({
+				stdout:
+					'{"BlockIO":"0B / 0B","CPUPerc":"0%","Container":"app","ID":"remote-container","MemPerc":"0%","MemUsage":"0B / 0B","Name":"app","NetIO":"0B / 0B"}',
+				stderr: "",
+			});
+
+		const server = { on: vi.fn() };
+		setupDockerStatsMonitoringSocketServer(server as never);
+
+		const socketHandlers = new Map<string, () => void>();
+		const ws = {
+			on: vi.fn((event: string, handler: () => void) => {
+				socketHandlers.set(event, handler);
+			}),
+			send: vi.fn(),
+			close: vi.fn(() => socketHandlers.get("close")?.()),
+		};
+		const connection = mocks.wssHandlers.get("connection");
+		await connection?.(ws, {
+			url: "/listen-docker-stats-monitoring?appName=app&appType=application&serverId=server-1",
+			headers: { host: "localhost" },
+		});
+
+		vi.advanceTimersByTime(1300);
+		await flush();
+
+		expect(mocks.findServerById).toHaveBeenCalledWith("server-1");
+		expect(mocks.execAsyncRemote).toHaveBeenNthCalledWith(
+			1,
+			"server-1",
+			'docker ps -q --filter "label=com.docker.swarm.service.name=app" | head -1',
+		);
+		expect(mocks.execAsyncRemote).toHaveBeenNthCalledWith(
+			2,
+			"server-1",
+			expect.stringContaining("docker stats remote-container --no-stream"),
+		);
+		expect(mocks.listContainers).not.toHaveBeenCalled();
+		expect(ws.send).toHaveBeenCalledOnce();
+	});
+
+	it("rejects a remote server from another organization", async () => {
+		mocks.findServerById.mockResolvedValue({ organizationId: "org-2" });
+		const server = { on: vi.fn() };
+		setupDockerStatsMonitoringSocketServer(server as never);
+
+		const ws = {
+			on: vi.fn(),
+			send: vi.fn(),
+			close: vi.fn(),
+		};
+		const connection = mocks.wssHandlers.get("connection");
+		await connection?.(ws, {
+			url: "/listen-docker-stats-monitoring?appName=app&serverId=server-2",
+			headers: { host: "localhost" },
+		});
+
+		expect(ws.close).toHaveBeenCalledOnce();
+		expect(mocks.execAsyncRemote).not.toHaveBeenCalled();
 	});
 });

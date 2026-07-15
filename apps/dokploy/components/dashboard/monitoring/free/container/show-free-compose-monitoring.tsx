@@ -123,6 +123,7 @@ export const ComposeFreeMonitoring = ({
 				<ContainerFreeMonitoring
 					appName={containerAppName || ""}
 					appType={appType}
+					serverId={serverId}
 				/>
 			</CardContent>
 		</>

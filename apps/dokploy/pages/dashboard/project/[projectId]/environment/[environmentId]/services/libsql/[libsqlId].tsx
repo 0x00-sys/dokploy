@@ -256,6 +256,7 @@ const Libsql = (
 															<div> */}
 														<ContainerFreeMonitoring
 															appName={data?.appName || ""}
+															serverId={data?.serverId || undefined}
 														/>
 														{/* </div> */}
 														{/* )} */}

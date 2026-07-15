@@ -2,6 +2,8 @@ import type http from "node:http";
 import {
 	docker,
 	execAsync,
+	execAsyncRemote,
+	findServerById,
 	getHostSystemStats,
 	getLastAdvancedStatsFile,
 	IS_CLOUD,
@@ -9,6 +11,7 @@ import {
 	validateRequest,
 } from "@dokploy/server";
 import { WebSocketServer } from "ws";
+import { isValidContainerId } from "./utils";
 
 export const setupDockerStatsMonitoringSocketServer = (
 	server: http.Server<typeof http.IncomingMessage, typeof http.ServerResponse>,
@@ -40,6 +43,7 @@ export const setupDockerStatsMonitoringSocketServer = (
 			return;
 		}
 		const appName = url.searchParams.get("appName");
+		const serverId = url.searchParams.get("serverId");
 		const appType = (url.searchParams.get("appType") || "application") as
 			| "application"
 			| "stack"
@@ -50,10 +54,21 @@ export const setupDockerStatsMonitoringSocketServer = (
 			ws.close(4000, "appName no provided");
 			return;
 		}
+		if (!isValidContainerId(appName)) {
+			ws.close(4000, "Invalid app name");
+			return;
+		}
 
 		if (!user || !session) {
 			ws.close();
 			return;
+		}
+		if (serverId) {
+			const server = await findServerById(serverId);
+			if (server.organizationId !== session.activeOrganizationId) {
+				ws.close();
+				return;
+			}
 		}
 		let isPolling = false;
 		const intervalId = setInterval(async () => {
@@ -88,18 +103,35 @@ export const setupDockerStatsMonitoringSocketServer = (
 					}),
 				};
 
-				const containers = await docker.listContainers({
-					filters: JSON.stringify(filter),
-				});
+				let containerId: string | undefined;
+				if (serverId) {
+					const remoteFilter =
+						appType === "application"
+							? `label=com.docker.swarm.service.name=${appName}`
+							: appType === "stack"
+								? `label=com.docker.swarm.task.name=${appName}`
+								: `name=${appName}`;
+					const result = await execAsyncRemote(
+						serverId,
+						`docker ps -q --filter "${remoteFilter}" | head -1`,
+					);
+					containerId = result.stdout.trim() || undefined;
+				} else {
+					const containers = await docker.listContainers({
+						filters: JSON.stringify(filter),
+					});
+					const container = containers[0];
+					if (container?.State === "running") containerId = container.Id;
+				}
 
-				const container = containers[0];
-				if (!container || container?.State !== "running") {
+				if (!containerId) {
 					ws.close(4000, "Container not running");
 					return;
 				}
-				const { stdout, stderr } = await execAsync(
-					`docker stats ${container.Id} --no-stream --format \'{"BlockIO":"{{.BlockIO}}","CPUPerc":"{{.CPUPerc}}","Container":"{{.Container}}","ID":"{{.ID}}","MemPerc":"{{.MemPerc}}","MemUsage":"{{.MemUsage}}","Name":"{{.Name}}","NetIO":"{{.NetIO}}"}\'`,
-				);
+				const statsCommand = `docker stats ${containerId} --no-stream --format \'{"BlockIO":"{{.BlockIO}}","CPUPerc":"{{.CPUPerc}}","Container":"{{.Container}}","ID":"{{.ID}}","MemPerc":"{{.MemPerc}}","MemUsage":"{{.MemUsage}}","Name":"{{.Name}}","NetIO":"{{.NetIO}}"}\'`;
+				const { stdout, stderr } = serverId
+					? await execAsyncRemote(serverId, statsCommand)
+					: await execAsync(statsCommand);
 				if (stderr) {
 					console.error("Docker stats error:", stderr);
 					return;

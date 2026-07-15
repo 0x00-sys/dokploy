@@ -271,6 +271,7 @@ const Postgresql = (
 														<>
 															<ContainerFreeMonitoring
 																appName={data?.appName || ""}
+																serverId={data?.serverId || undefined}
 															/>
 														</>
 													)}
