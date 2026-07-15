@@ -87,7 +87,12 @@ export const setupTerminalWebSocketServer = (
 	wssTerm.on("connection", async (ws, req) => {
 		const url = new URL(req.url || "", `http://${req.headers.host}`);
 		const serverId = url.searchParams.get("serverId");
+		let isClosed = false;
+		ws.once("close", () => {
+			isClosed = true;
+		});
 		const { user, session } = await validateRequest(req);
+		if (isClosed) return;
 		if (!user || !session || !serverId) {
 			ws.close();
 			return;
@@ -114,6 +119,7 @@ export const setupTerminalWebSocketServer = (
 			try {
 				ws.send("Setting up private SSH key...\n");
 				const privateKey = await setupLocalServerSSHKey();
+				if (isClosed) return;
 
 				if (!privateKey) {
 					ws.close();
@@ -121,6 +127,7 @@ export const setupTerminalWebSocketServer = (
 				}
 
 				const dockerHost = await getDockerHost();
+				if (isClosed) return;
 
 				ws.send(`Found Docker host: ${dockerHost}\n`);
 
@@ -148,6 +155,7 @@ export const setupTerminalWebSocketServer = (
 			}
 		} else {
 			const server = await findServerById(serverId);
+			if (isClosed) return;
 
 			if (!server) {
 				ws.close();
