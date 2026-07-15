@@ -65,6 +65,30 @@ beforeEach(() => {
 	sshMock.reset();
 });
 
+const createStream = () => {
+	const handlers = new Map<string, (...args: unknown[]) => void>();
+	const stderrHandlers = new Map<string, (...args: unknown[]) => void>();
+	const stream = {
+		stderr: {
+			on(event: string, handler: (...args: unknown[]) => void) {
+				stderrHandlers.set(event, handler);
+				return this;
+			},
+		},
+		on(event: string, handler: (...args: unknown[]) => void) {
+			handlers.set(event, handler);
+			return stream;
+		},
+		emit(event: string, ...args: unknown[]) {
+			handlers.get(event)?.(...args);
+		},
+		emitStderr(event: string, ...args: unknown[]) {
+			stderrHandlers.get(event)?.(...args);
+		},
+	};
+	return stream;
+};
+
 describe("execAsyncRemote", () => {
 	it("closes the SSH connection when opening the command channel fails", async () => {
 		sshMock.exec.mockImplementationOnce(
@@ -77,5 +101,53 @@ describe("execAsyncRemote", () => {
 			"Unable to open command channel",
 		);
 		expect(sshMock.end).toHaveBeenCalledOnce();
+	});
+
+	it("bounds captured output while streaming the full remote command", async () => {
+		const output = "x".repeat(2 * 1024 * 1024);
+		const stream = createStream();
+		sshMock.exec.mockImplementationOnce(
+			(
+				_command: string,
+				callback: (error: undefined, channel: typeof stream) => void,
+			) => {
+				callback(undefined, stream);
+				stream.emit("data", output);
+				stream.emitStderr("data", output);
+				stream.emit("close", 0, "");
+			},
+		);
+		let streamedBytes = 0;
+
+		const result = await execAsyncRemote(
+			"server-1",
+			"docker pull image",
+			(data) => {
+				streamedBytes += Buffer.byteLength(data);
+			},
+		);
+
+		expect(streamedBytes).toBe(4 * 1024 * 1024);
+		expect(result.stdout).toHaveLength(1024 * 1024);
+		expect(result.stderr).toHaveLength(1024 * 1024);
+	});
+
+	it("preserves complete remote output when no stream callback is used", async () => {
+		const output = "x".repeat(2 * 1024 * 1024);
+		const stream = createStream();
+		sshMock.exec.mockImplementationOnce(
+			(
+				_command: string,
+				callback: (error: undefined, channel: typeof stream) => void,
+			) => {
+				callback(undefined, stream);
+				stream.emit("data", output);
+				stream.emit("close", 0, "");
+			},
+		);
+
+		const result = await execAsyncRemote("server-1", "cat large-file");
+
+		expect(result.stdout).toHaveLength(2 * 1024 * 1024);
 	});
 });

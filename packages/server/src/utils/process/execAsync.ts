@@ -199,12 +199,18 @@ export const execAsyncRemote = async (
 							}
 						})
 						.on("data", (data: string) => {
-							stdout += data.toString();
-							onData?.(data.toString());
+							const stringData = data.toString();
+							stdout = onData
+								? appendStreamOutput(stdout, stringData)
+								: stdout + stringData;
+							onData?.(stringData);
 						})
 						.stderr.on("data", (data) => {
-							stderr += data.toString();
-							onData?.(data.toString());
+							const stringData = data.toString();
+							stderr = onData
+								? appendStreamOutput(stderr, stringData)
+								: stderr + stringData;
+							onData?.(stringData);
 						});
 				});
 			})
