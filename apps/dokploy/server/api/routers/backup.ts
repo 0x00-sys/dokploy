@@ -208,6 +208,13 @@ export const backupRouter = createTRPCRouter({
 		.mutation(async ({ input, ctx }) => {
 			try {
 				const existing = await findBackupById(input.backupId);
+				if (
+					existing.databaseType === "web-server" &&
+					ctx.user.role !== "owner" &&
+					ctx.user.role !== "admin"
+				) {
+					throw new TRPCError({ code: "UNAUTHORIZED" });
+				}
 				const serviceId =
 					existing.postgresId ||
 					existing.mysqlId ||
@@ -252,6 +259,9 @@ export const backupRouter = createTRPCRouter({
 					resourceId: backup.backupId,
 				});
 			} catch (error) {
+				if (error instanceof TRPCError && error.code === "UNAUTHORIZED") {
+					throw error;
+				}
 				const message =
 					error instanceof Error ? error.message : "Error updating this Backup";
 				throw new TRPCError({
