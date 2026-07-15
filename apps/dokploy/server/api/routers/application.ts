@@ -745,7 +745,11 @@ export const applicationRouter = createTRPCRouter({
 				deployment: ["create"],
 			});
 			const application = await findApplicationById(input.applicationId);
-			await clearOldDeployments(application.appName, application.serverId);
+			await clearOldDeployments(
+				input.applicationId,
+				"application",
+				application.buildServerId || application.serverId,
+			);
 			await audit(ctx, {
 				action: "delete",
 				resourceType: "application",
