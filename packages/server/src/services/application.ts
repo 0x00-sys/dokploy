@@ -574,7 +574,7 @@ export const rebuildPreviewApplication = async ({
 		}
 
 		command += `echo "\nError occurred ❌, check the logs for details." >> ${deployment.logPath};`;
-		const serverId = application.buildServerId || application.serverId;
+		const serverId = application.serverId;
 		if (serverId) {
 			await execAsyncRemote(serverId, command);
 		} else {
