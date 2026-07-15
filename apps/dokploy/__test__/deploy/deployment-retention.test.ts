@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
 	]);
 
 	return {
+		deleteChain,
 		db: {
 			delete: vi.fn(() => deleteChain),
 			insert: vi.fn(() => insertChain),
@@ -62,6 +63,7 @@ import { createDeployment } from "@dokploy/server/services/deployment";
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	mocks.deleteChain.returning.mockResolvedValue([]);
 	mocks.findApplicationById.mockResolvedValue({
 		applicationId: "application-1",
 		appName: "app-1",
@@ -137,4 +139,104 @@ it("removes the oldest log before inserting an eleventh deployment", async () =>
 
 	expect(cleanupCall?.[0]).toBe("build-server");
 	expect(cleanupCall?.[1]).toContain("rm -rf /var/lib/dokploy/logs/app-9.log");
+});
+
+it("removes retained build-server logs in one SSH command", async () => {
+	mocks.db.query.deployments.findMany.mockResolvedValue(
+		Array.from({ length: 10 }, (_, index) => ({
+			deploymentId: `deployment-${index}`,
+			logPath: `/var/lib/dokploy/logs/app-${index}.log`,
+			rollbackId: null,
+		})),
+	);
+	mocks.deleteChain.returning.mockResolvedValue([
+		{
+			deploymentId: "deployment-9",
+			logPath: "/var/lib/dokploy/logs/app-9.log",
+			serverId: null,
+			buildServerId: "build-server",
+		},
+	]);
+
+	await createDeployment({
+		applicationId: "application-1",
+		title: "Deployment",
+		description: "",
+	});
+
+	const cleanupCalls = mocks.execAsyncRemote.mock.calls.filter(([, command]) =>
+		command.includes("rm -"),
+	);
+
+	expect(cleanupCalls).toHaveLength(1);
+	expect(cleanupCalls[0]?.[0]).toBe("build-server");
+	expect(cleanupCalls[0]?.[1]).toContain("/var/lib/dokploy/logs/app-9.log");
+});
+
+it("groups retained logs by the build server that created them", async () => {
+	mocks.db.query.deployments.findMany.mockResolvedValue(
+		Array.from({ length: 11 }, (_, index) => ({
+			deploymentId: `deployment-${index}`,
+			logPath: `/var/lib/dokploy/logs/app-${index}.log`,
+			rollbackId: null,
+			buildServerId:
+				index === 9
+					? "previous-build-server"
+					: index === 10
+						? "oldest-build-server"
+						: null,
+		})),
+	);
+
+	await createDeployment({
+		applicationId: "application-1",
+		title: "Deployment",
+		description: "",
+	});
+
+	const cleanupCalls = mocks.execAsyncRemote.mock.calls.filter(([, command]) =>
+		command.includes("rm -"),
+	);
+
+	expect(cleanupCalls).toEqual(
+		expect.arrayContaining([
+			[
+				"previous-build-server",
+				expect.stringContaining("/var/lib/dokploy/logs/app-9.log"),
+			],
+			[
+				"oldest-build-server",
+				expect.stringContaining("/var/lib/dokploy/logs/app-10.log"),
+			],
+		]),
+	);
+});
+
+it("keeps a log when its deployment record could not be deleted", async () => {
+	mocks.db.query.deployments.findMany.mockResolvedValue(
+		Array.from({ length: 10 }, (_, index) => ({
+			deploymentId: `deployment-${index}`,
+			logPath: `/var/lib/dokploy/logs/app-${index}.log`,
+			rollbackId: null,
+		})),
+	);
+	mocks.deleteChain.returning.mockRejectedValue(
+		new Error("database unavailable"),
+	);
+	const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+	try {
+		await createDeployment({
+			applicationId: "application-1",
+			title: "Deployment",
+			description: "",
+		});
+	} finally {
+		consoleError.mockRestore();
+	}
+
+	const cleanupCalls = mocks.execAsyncRemote.mock.calls.filter(([, command]) =>
+		command.includes("rm -"),
+	);
+	expect(cleanupCalls).toHaveLength(0);
 });
