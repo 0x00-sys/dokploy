@@ -71,6 +71,7 @@ export const setupDockerContainerTerminalWebSocketServer = (
 					throw new Error("No SSH key available for this server");
 
 				const conn = new Client();
+				ws.once("close", () => conn.end());
 				let _stdout = "";
 				let _stderr = "";
 				conn
@@ -126,8 +127,6 @@ export const setupDockerContainerTerminalWebSocketServer = (
 
 							ws.on("close", () => {
 								stream.end();
-								// Ensure SSH connection is closed when WebSocket closes
-								conn.end();
 							});
 						});
 					})

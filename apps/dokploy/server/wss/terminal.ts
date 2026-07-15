@@ -174,6 +174,7 @@ export const setupTerminalWebSocketServer = (
 		}
 
 		const conn = new Client();
+		ws.once("close", () => conn.end());
 		let _stdout = "";
 		let _stderr = "";
 
