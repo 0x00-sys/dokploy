@@ -260,25 +260,30 @@ export const libsqlRouter = createTRPCRouter({
 			});
 			const queue: string[] = [];
 			let done = false;
+			let acceptingLogs = true;
 
 			deployLibsql(input.libsqlId, (log) => {
-				queue.push(log);
+				if (acceptingLogs) queue.push(log);
 			})
 				.catch(() => {})
 				.finally(() => {
 					done = true;
 				});
 
-			while (!done || queue.length > 0) {
-				if (queue.length > 0) {
-					yield queue.shift()!;
-				} else {
-					await new Promise((r) => setTimeout(r, 50));
-				}
+			try {
+				while (!done || queue.length > 0) {
+					if (queue.length > 0) {
+						yield queue.shift()!;
+					} else {
+						await new Promise((r) => setTimeout(r, 50));
+					}
 
-				if (signal?.aborted) {
-					return;
+					if (signal?.aborted) {
+						return;
+					}
 				}
+			} finally {
+				acceptingLogs = false;
 			}
 		}),
 	changeStatus: protectedProcedure
