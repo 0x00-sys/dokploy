@@ -9,6 +9,7 @@ vi.mock("@dokploy/server/utils/process/execAsync", () => mocks);
 
 import {
 	removeService,
+	startConfiguredService,
 	startService,
 	startServiceRemote,
 	stopService,
@@ -42,6 +43,32 @@ it("starts local and remote services with the requested replica count", async ()
 	expect(mocks.execAsyncRemote).toHaveBeenCalledWith(
 		"server-1",
 		"docker service scale app=4 ",
+	);
+});
+
+it("starts configured services with their saved replica count", async () => {
+	mocks.execAsync.mockResolvedValue({ stdout: "", stderr: "" });
+	mocks.execAsyncRemote.mockResolvedValue({ stdout: "", stderr: "" });
+
+	await startConfiguredService({
+		appName: "local-app",
+		serverId: null,
+		replicas: 3,
+		modeSwarm: null,
+	});
+	await startConfiguredService({
+		appName: "remote-app",
+		serverId: "server-1",
+		replicas: 3,
+		modeSwarm: { Replicated: { Replicas: 5 } },
+	});
+
+	expect(mocks.execAsync).toHaveBeenCalledWith(
+		"docker service scale local-app=3 ",
+	);
+	expect(mocks.execAsyncRemote).toHaveBeenCalledWith(
+		"server-1",
+		"docker service scale remote-app=5 ",
 	);
 });
 

@@ -17,8 +17,7 @@ import {
 	rebuildDatabase,
 	removeMariadbById,
 	removeService,
-	startService,
-	startServiceRemote,
+	startConfiguredService,
 	stopService,
 	stopServiceRemote,
 	updateMariadbById,
@@ -142,11 +141,7 @@ export const mariadbRouter = createTRPCRouter({
 				deployment: ["create"],
 			});
 			const service = await findMariadbById(input.mariadbId);
-			if (service.serverId) {
-				await startServiceRemote(service.serverId, service.appName);
-			} else {
-				await startService(service.appName);
-			}
+			await startConfiguredService(service);
 			await updateMariadbById(input.mariadbId, {
 				applicationStatus: "done",
 			});
@@ -349,11 +344,7 @@ export const mariadbRouter = createTRPCRouter({
 				applicationStatus: "idle",
 			});
 
-			if (mariadb.serverId) {
-				await startServiceRemote(mariadb.serverId, mariadb.appName);
-			} else {
-				await startService(mariadb.appName);
-			}
+			await startConfiguredService(mariadb);
 			await updateMariadbById(input.mariadbId, {
 				applicationStatus: "done",
 			});
