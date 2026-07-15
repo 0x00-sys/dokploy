@@ -33,6 +33,10 @@ export const setupDeploymentLogsWebSocketServer = (
 
 	wssTerm.on("connection", async (ws, req) => {
 		const url = new URL(req.url || "", `http://${req.headers.host}`);
+		let isClosed = false;
+		ws.once("close", () => {
+			isClosed = true;
+		});
 		const logPath = url.searchParams.get("logPath");
 		const serverId = url.searchParams.get("serverId");
 		const { user, session } = await validateRequest(req);
@@ -61,6 +65,7 @@ export const setupDeploymentLogsWebSocketServer = (
 		try {
 			if (serverId) {
 				const server = await findServerById(serverId);
+				if (isClosed) return;
 
 				if (server.organizationId !== session.activeOrganizationId) {
 					ws.close();
@@ -123,6 +128,7 @@ export const setupDeploymentLogsWebSocketServer = (
 					}
 				});
 			} else {
+				if (isClosed) return;
 				if (IS_CLOUD) {
 					ws.send("This feature is not available in the cloud version.");
 					ws.close();
