@@ -336,6 +336,7 @@ export const applicationRouter = createTRPCRouter({
 				applicationType: "application",
 				server: !!application.serverId,
 				serverId: application.serverId ?? undefined,
+				buildServerId: application.buildServerId ?? undefined,
 			};
 
 			if (IS_CLOUD && application.serverId) {
@@ -704,6 +705,7 @@ export const applicationRouter = createTRPCRouter({
 				applicationType: "application",
 				server: !!application.serverId,
 				serverId: application.serverId ?? undefined,
+				buildServerId: application.buildServerId ?? undefined,
 			};
 			if (IS_CLOUD && application.serverId) {
 				deploy(jobData).catch((error) => {
@@ -830,6 +832,7 @@ export const applicationRouter = createTRPCRouter({
 				applicationType: "application",
 				server: !!app.serverId,
 				serverId: app.serverId ?? undefined,
+				buildServerId: app.buildServerId ?? undefined,
 			};
 			if (IS_CLOUD && app.serverId) {
 				deploy(jobData).catch((error) => {

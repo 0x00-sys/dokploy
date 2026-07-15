@@ -178,6 +178,7 @@ export default async function handler(
 				applicationType: "compose",
 				descriptionLog: `Hash: ${deploymentHash}`,
 				server: !!composeResult.serverId,
+				serverId: composeResult.serverId ?? undefined,
 			};
 
 			if (IS_CLOUD && composeResult.serverId) {

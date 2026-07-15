@@ -7,6 +7,7 @@ type DeployJob =
 			type: "deploy" | "redeploy";
 			applicationType: "application";
 			serverId?: string;
+			buildServerId?: string;
 	  }
 	| {
 			composeId: string;
