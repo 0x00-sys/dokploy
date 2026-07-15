@@ -592,7 +592,10 @@ export const createDeploymentVolumeBackup = async (
 	}
 };
 
-export const removeDeployment = async (deploymentId: string) => {
+export const removeDeployment = async (
+	deploymentId: string,
+	targetServerId?: string | null,
+) => {
 	try {
 		const deployment = await db
 			.delete(deployments)
@@ -607,8 +610,10 @@ export const removeDeployment = async (deploymentId: string) => {
 		const logPath = path.join(deployment.logPath);
 		if (logPath && logPath !== ".") {
 			const command = `rm -f ${logPath};`;
-			if (deployment.serverId) {
-				await execAsyncRemote(deployment.serverId, command);
+			const serverId =
+				targetServerId || deployment.buildServerId || deployment.serverId;
+			if (serverId) {
+				await execAsyncRemote(serverId, command);
 			} else {
 				await execAsync(command);
 			}
