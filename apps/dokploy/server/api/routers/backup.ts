@@ -82,6 +82,13 @@ export const backupRouter = createTRPCRouter({
 	create: protectedProcedure
 		.input(apiCreateBackup)
 		.mutation(async ({ input, ctx }) => {
+			if (
+				input.databaseType === "web-server" &&
+				ctx.user.role !== "owner" &&
+				ctx.user.role !== "admin"
+			) {
+				throw new TRPCError({ code: "UNAUTHORIZED" });
+			}
 			try {
 				const serviceId =
 					input.postgresId ||
