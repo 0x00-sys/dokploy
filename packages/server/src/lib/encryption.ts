@@ -31,7 +31,9 @@ const decryptionKeys = encryptionSecret
 // Derived keys only — never the raw secrets. A leaked key can decrypt
 // stored values, but the raw BETTER_AUTH_SECRET could also forge sessions.
 export const exportEncryptionKeys = () =>
-	decryptionKeys.map((key) => key.toString("hex")).join("\n");
+	[...decryptionKeys, ...loadRestoredKeys()]
+		.map((key) => key.toString("hex"))
+		.join("\n");
 
 let restoredKeys: Buffer[] | undefined;
 
