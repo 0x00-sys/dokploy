@@ -35,6 +35,12 @@ export const setupDockerStatsMonitoringSocketServer = (
 
 	wssTerm.on("connection", async (ws, req) => {
 		const url = new URL(req.url || "", `http://${req.headers.host}`);
+		let stopPolling = () => {};
+		let isClosed = false;
+		ws.on("close", () => {
+			isClosed = true;
+			stopPolling();
+		});
 
 		if (IS_CLOUD) {
 			ws.send("This feature is not available in the cloud version.");
@@ -69,6 +75,7 @@ export const setupDockerStatsMonitoringSocketServer = (
 				return;
 			}
 		}
+		if (isClosed) return;
 		let isPolling = false;
 		const intervalId = setInterval(async () => {
 			if (isPolling) return;
@@ -154,9 +161,6 @@ export const setupDockerStatsMonitoringSocketServer = (
 				isPolling = false;
 			}
 		}, 1300);
-
-		ws.on("close", () => {
-			clearInterval(intervalId);
-		});
+		stopPolling = () => clearInterval(intervalId);
 	});
 };
