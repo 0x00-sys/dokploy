@@ -97,7 +97,6 @@ export const runCommand = async (scheduleId: string) => {
 					writeStream.write(
 						"This feature is not available in the cloud version.",
 					);
-					writeStream.end();
 					return;
 				}
 				writeStream.write(
@@ -119,14 +118,15 @@ export const runCommand = async (scheduleId: string) => {
 				writeStream.write(
 					error instanceof Error ? error.message : "Unknown error",
 				);
-				writeStream.end();
 				await updateDeploymentStatus(deployment.deploymentId, "error");
 				throw error;
+			} finally {
+				writeStream.end();
 			}
 		}
 	} else if (scheduleType === "dokploy-server") {
+		const writeStream = createWriteStream(deployment.logPath, { flags: "a" });
 		try {
-			const writeStream = createWriteStream(deployment.logPath, { flags: "a" });
 			const { SCHEDULES_PATH } = paths();
 			const fullPath = path.join(SCHEDULES_PATH, appName || "");
 
@@ -153,6 +153,8 @@ export const runCommand = async (scheduleId: string) => {
 		} catch (error) {
 			await updateDeploymentStatus(deployment.deploymentId, "error");
 			throw error;
+		} finally {
+			writeStream.end();
 		}
 	} else if (scheduleType === "server") {
 		try {
