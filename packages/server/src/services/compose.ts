@@ -504,20 +504,21 @@ export const stopCompose = async (composeId: string) => {
 	try {
 		const { COMPOSE_PATH } = paths(!!compose.serverId);
 		if (compose.composeType === "docker-compose") {
+			const projectPath = join(COMPOSE_PATH, compose.appName, "code");
+			const path =
+				compose.sourceType === "raw"
+					? "docker-compose.yml"
+					: compose.composePath;
+			const command = `env -i PATH="$PATH" docker compose -p ${compose.appName} -f ${path} stop`;
 			if (compose.serverId) {
 				await execAsyncRemote(
 					compose.serverId,
-					`cd ${join(COMPOSE_PATH, compose.appName)} && env -i PATH="$PATH" docker compose -p ${
-						compose.appName
-					} stop`,
+					`cd ${projectPath} && ${command}`,
 				);
 			} else {
-				await execAsync(
-					`env -i PATH="$PATH" docker compose -p ${compose.appName} stop`,
-					{
-						cwd: join(COMPOSE_PATH, compose.appName),
-					},
-				);
+				await execAsync(command, {
+					cwd: projectPath,
+				});
 			}
 		}
 
