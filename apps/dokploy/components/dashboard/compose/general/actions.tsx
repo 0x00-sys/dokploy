@@ -11,6 +11,7 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useComposeRuntimeStatus } from "@/hooks/use-compose-runtime-status";
 import { api } from "@/utils/api";
 import { DockerTerminalModal } from "../../settings/web-server/docker-terminal-modal";
 
@@ -39,7 +40,14 @@ export const ComposeActions = ({ composeId }: Props) => {
 		api.compose.start.useMutation();
 	const { mutateAsync: stop, isPending: isStopping } =
 		api.compose.stop.useMutation();
-	const lifecycleAction = getComposeLifecycleAction(data?.composeStatus);
+	const { composeStatus, refetch: refetchRuntimeStatus } =
+		useComposeRuntimeStatus({
+			appName: data?.appName,
+			appType: data?.composeType,
+			composeStatus: data?.composeStatus,
+			serverId: data?.serverId,
+		});
+	const lifecycleAction = getComposeLifecycleAction(composeStatus);
 	return (
 		<div className="flex flex-row gap-4 w-full flex-wrap ">
 			<TooltipProvider delayDuration={0} disableHoverableContent={false}>
@@ -178,6 +186,7 @@ export const ComposeActions = ({ composeId }: Props) => {
 									.then(() => {
 										toast.success("Compose stopped successfully");
 										refetch();
+										refetchRuntimeStatus();
 									})
 									.catch(() => {
 										toast.error("Error stopping compose");
