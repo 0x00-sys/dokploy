@@ -1,7 +1,6 @@
 import { db } from "@dokploy/server/db";
 import {
 	type apiCreatePreviewDeployment,
-	deployments,
 	organization,
 	previewDeployments,
 } from "@dokploy/server/db/schema";
@@ -117,9 +116,6 @@ export const findPreviewDeploymentsByApplicationId = async (
 		where: eq(previewDeployments.applicationId, applicationId),
 		orderBy: desc(previewDeployments.createdAt),
 		with: {
-			deployments: {
-				orderBy: desc(deployments.createdAt),
-			},
 			domain: true,
 		},
 	});
