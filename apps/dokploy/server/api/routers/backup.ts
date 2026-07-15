@@ -648,7 +648,10 @@ export const backupRouter = createTRPCRouter({
 			}
 			const queue: string[] = [];
 			let done = false;
-			const onLog = (log: string) => queue.push(log);
+			let acceptingLogs = true;
+			const onLog = (log: string) => {
+				if (acceptingLogs) queue.push(log);
+			};
 			const runRestore = async () => {
 				if (input.backupType === "database") {
 					if (input.databaseType === "postgres") {
@@ -683,16 +686,20 @@ export const backupRouter = createTRPCRouter({
 				.finally(() => {
 					done = true;
 				});
-			while (!done || queue.length > 0) {
-				if (queue.length > 0) {
-					yield queue.shift()!;
-				} else {
-					await new Promise((r) => setTimeout(r, 50));
-				}
+			try {
+				while (!done || queue.length > 0) {
+					if (queue.length > 0) {
+						yield queue.shift()!;
+					} else {
+						await new Promise((r) => setTimeout(r, 50));
+					}
 
-				if (signal?.aborted) {
-					return;
+					if (signal?.aborted) {
+						return;
+					}
 				}
+			} finally {
+				acceptingLogs = false;
 			}
 		}),
 });
