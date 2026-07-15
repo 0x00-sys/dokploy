@@ -289,6 +289,8 @@ const installRequirements = async (
 	const isBuildServer = server.serverType === "build";
 
 	return new Promise<void>((resolve, reject) => {
+		let commandFailure: Error | undefined;
+
 		client
 			.once("ready", () => {
 				const command = server.command || defaultCommand(isBuildServer);
@@ -299,8 +301,23 @@ const installRequirements = async (
 						return;
 					}
 					stream
+						.on("exit", (code: number | null, signal?: string) => {
+							if (typeof code === "number" && code !== 0) {
+								commandFailure = new Error(
+									`Server setup command exited with code ${code}`,
+								);
+							} else if (signal) {
+								commandFailure = new Error(
+									`Server setup command was terminated by signal ${signal}`,
+								);
+							}
+						})
 						.on("close", () => {
 							client.end();
+							if (commandFailure) {
+								reject(commandFailure);
+								return;
+							}
 							resolve();
 						})
 						.on("data", (data: string) => {
