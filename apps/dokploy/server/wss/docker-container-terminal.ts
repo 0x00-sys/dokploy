@@ -72,8 +72,6 @@ export const setupDockerContainerTerminalWebSocketServer = (
 
 				const conn = new Client();
 				ws.once("close", () => conn.end());
-				let _stdout = "";
-				let _stderr = "";
 				conn
 					.once("ready", () => {
 						// Use array-style arguments to prevent shell injection
@@ -100,11 +98,9 @@ export const setupDockerContainerTerminalWebSocketServer = (
 									conn.end();
 								})
 								.on("data", (data: string) => {
-									_stdout += data.toString();
 									ws.send(data.toString());
 								})
 								.stderr.on("data", (data) => {
-									_stderr += data.toString();
 									ws.send(data.toString());
 									console.error("Error: ", data.toString());
 								});

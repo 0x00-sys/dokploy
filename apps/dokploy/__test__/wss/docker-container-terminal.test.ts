@@ -2,16 +2,28 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
 	const wssHandlers = new Map<string, (...args: any[]) => unknown>();
+	const stderr = {
+		on: vi.fn(),
+	};
+	const stream = {
+		on: vi.fn(),
+		stderr,
+		write: vi.fn(),
+		end: vi.fn(),
+	};
 	const client = {
 		once: vi.fn(),
 		on: vi.fn(),
+		exec: vi.fn(),
 		connect: vi.fn(),
 		end: vi.fn(),
 	};
-	client.once.mockReturnValue(client);
-	client.on.mockReturnValue(client);
-	client.connect.mockReturnValue(client);
-	return { client, wssHandlers };
+	return {
+		client,
+		stderr,
+		stream,
+		wssHandlers,
+	};
 });
 
 vi.mock("ws", () => ({
@@ -60,7 +72,11 @@ beforeEach(() => {
 	mocks.wssHandlers.clear();
 	mocks.client.once.mockReturnValue(mocks.client);
 	mocks.client.on.mockReturnValue(mocks.client);
+	mocks.client.exec.mockImplementation((_command, _options, callback) => {
+		callback(null, mocks.stream);
+	});
 	mocks.client.connect.mockReturnValue(mocks.client);
+	mocks.stream.on.mockReturnValue(mocks.stream);
 });
 
 it("closes SSH when the socket disconnects before SSH is ready", async () => {
@@ -86,4 +102,31 @@ it("closes SSH when the socket disconnects before SSH is ready", async () => {
 	for (const handler of socketHandlers.get("close") ?? []) handler();
 
 	expect(mocks.client.end).toHaveBeenCalledOnce();
+});
+
+it("forwards each remote stdout chunk without making a retained copy", async () => {
+	setupDockerContainerTerminalWebSocketServer({ on: vi.fn() } as never);
+	const ws = {
+		on: vi.fn(),
+		once: vi.fn(),
+		send: vi.fn(),
+		close: vi.fn(),
+	};
+	await mocks.wssHandlers.get("connection")?.(ws, {
+		url: "/docker-container-terminal?containerId=abc123&serverId=server-1",
+		headers: { host: "localhost" },
+	});
+
+	const readyHandler = mocks.client.once.mock.calls.find(
+		([event]) => event === "ready",
+	)?.[1];
+	readyHandler?.();
+	const chunk = { toString: vi.fn(() => "terminal output") };
+	const dataHandler = mocks.stream.on.mock.calls.find(
+		([event]) => event === "data",
+	)?.[1];
+	dataHandler?.(chunk);
+
+	expect(chunk.toString).toHaveBeenCalledOnce();
+	expect(ws.send).toHaveBeenCalledWith("terminal output");
 });
