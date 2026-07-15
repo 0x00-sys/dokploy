@@ -153,6 +153,7 @@ export const deploymentRouter = createTRPCRouter({
 			const deploymentsList = await db.query.deployments.findMany({
 				where: eq(deployments[`${input.type}Id`], input.id),
 				orderBy: desc(deployments.createdAt),
+				limit: 10,
 				with: {
 					rollback: true,
 				},
