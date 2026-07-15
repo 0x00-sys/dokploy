@@ -6,6 +6,10 @@ import { readValidDirectory } from "@dokploy/server/wss/utils";
 import { Client } from "ssh2";
 import { WebSocketServer } from "ws";
 
+export const isChildProcessRunning = (
+	process: Pick<ReturnType<typeof spawn>, "exitCode" | "signalCode">,
+) => process.exitCode === null && process.signalCode === null;
+
 export const setupDeploymentLogsWebSocketServer = (
 	server: http.Server<typeof http.IncomingMessage, typeof http.ServerResponse>,
 ) => {
@@ -156,25 +160,23 @@ export const setupDeploymentLogsWebSocketServer = (
 				});
 
 				ws.on("close", () => {
-					if (tailProcess && !tailProcess.killed) {
+					if (tailProcess && isChildProcessRunning(tailProcess)) {
 						tailProcess.kill("SIGTERM");
 						// Force kill after a timeout if it doesn't terminate
 						setTimeout(() => {
-							if (tailProcess && !tailProcess.killed) {
+							if (tailProcess && isChildProcessRunning(tailProcess)) {
 								tailProcess.kill("SIGKILL");
-							} else {
 							}
 						}, 1000);
-					} else {
 					}
 				});
 			}
 		} catch (error) {
 			// Clean up resources on error
-			if (tailProcess && !tailProcess.killed) {
+			if (tailProcess && isChildProcessRunning(tailProcess)) {
 				tailProcess.kill("SIGTERM");
 				setTimeout(() => {
-					if (tailProcess && !tailProcess.killed) {
+					if (tailProcess && isChildProcessRunning(tailProcess)) {
 						tailProcess.kill("SIGKILL");
 					}
 				}, 1000);
