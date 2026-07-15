@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const HEALTH_CHECK_URL = "/api/health";
@@ -38,6 +38,14 @@ export const useHealthCheckAfterMutation = ({
 	reloadOnSuccess = false,
 }: UseHealthCheckAfterMutationOptions) => {
 	const [isExecuting, setIsExecuting] = useState(false);
+	const isMounted = useRef(true);
+
+	useEffect(() => {
+		isMounted.current = true;
+		return () => {
+			isMounted.current = false;
+		};
+	}, []);
 
 	const checkHealth = useCallback(async (): Promise<boolean> => {
 		try {
@@ -49,7 +57,9 @@ export const useHealthCheckAfterMutation = ({
 	}, []);
 
 	const pollUntilHealthy = useCallback(async (): Promise<void> => {
+		if (!isMounted.current) return;
 		const isHealthy = await checkHealth();
+		if (!isMounted.current) return;
 
 		if (isHealthy) {
 			toast.success(successMessage);
@@ -65,7 +75,7 @@ export const useHealthCheckAfterMutation = ({
 		}
 
 		await new Promise((resolve) => setTimeout(resolve, pollInterval));
-		await pollUntilHealthy();
+		if (isMounted.current) await pollUntilHealthy();
 	}, [checkHealth, successMessage, reloadOnSuccess, onSuccess, pollInterval]);
 
 	const execute = useCallback(
@@ -82,7 +92,7 @@ export const useHealthCheckAfterMutation = ({
 
 				return result;
 			} finally {
-				setIsExecuting(false);
+				if (isMounted.current) setIsExecuting(false);
 			}
 		},
 		[initialDelay, pollUntilHealthy],
