@@ -28,6 +28,29 @@ export const getVolumeServiceAppName = (
 	return serviceAppName || volumeBackup.appName;
 };
 
+export const wrapStoppedServiceBackup = (
+	stopCommand: string,
+	backupCommand: string,
+	startCommand: string,
+	uploadCommand: string,
+) => `
+(
+	set -e
+	${stopCommand}
+
+	restart_service() {
+		${startCommand}
+	}
+	trap restart_service EXIT
+
+	${backupCommand}
+
+	restart_service
+	trap - EXIT
+)
+${uploadCommand}
+`;
+
 export const backupVolume = async (
 	volumeBackup: Awaited<ReturnType<typeof findVolumeBackupById>>,
 ) => {
@@ -117,16 +140,23 @@ export const backupVolume = async (
 	);
 
 	if (serviceType === "application") {
-		return lockWrapper(`
+		const stopCommand = `
 		echo "Stopping application to 0 replicas"
 		ACTUAL_REPLICAS=$(docker service inspect ${volumeBackup.application?.appName} --format "{{.Spec.Mode.Replicated.Replicas}}")
 		echo "Actual replicas: $ACTUAL_REPLICAS"
-		docker service update --replicas=0 ${volumeBackup.application?.appName}
-        ${backupCommand}
+		docker service update --replicas=0 ${volumeBackup.application?.appName}`;
+		const startCommand = `
 		echo "Starting application to $ACTUAL_REPLICAS replicas"
-        docker service update --replicas=$ACTUAL_REPLICAS --with-registry-auth ${volumeBackup.application?.appName}
-		${uploadCommand}
-  `);
+		docker service update --replicas=$ACTUAL_REPLICAS --with-registry-auth ${volumeBackup.application?.appName}`;
+
+		return lockWrapper(
+			wrapStoppedServiceBackup(
+				stopCommand,
+				backupCommand,
+				startCommand,
+				uploadCommand,
+			),
+		);
 	}
 	if (serviceType === "compose") {
 		const compose = await findComposeById(
@@ -158,11 +188,13 @@ export const backupVolume = async (
 			echo "Compose container started"
 			`;
 		}
-		return lockWrapper(`
-        ${stopCommand}
-        ${backupCommand}
-        ${startCommand}
-		${uploadCommand}
-  `);
+		return lockWrapper(
+			wrapStoppedServiceBackup(
+				stopCommand,
+				backupCommand,
+				startCommand,
+				uploadCommand,
+			),
+		);
 	}
 };
