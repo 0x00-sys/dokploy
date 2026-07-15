@@ -31,12 +31,13 @@ import type { LogLine } from "./utils";
 
 interface Props {
 	logs: LogLine[];
+	logCount?: number;
 	context: "build" | "runtime";
 }
 
 const MAX_LOG_LINES = 200;
 
-export function AnalyzeLogs({ logs, context }: Props) {
+export function AnalyzeLogs({ logs, logCount = logs.length, context }: Props) {
 	const [open, setOpen] = useState(false);
 	const [aiId, setAiId] = useState<string>("");
 	const [copied, setCopied] = useState(false);
@@ -52,10 +53,10 @@ export function AnalyzeLogs({ logs, context }: Props) {
 	});
 
 	const handleAnalyze = () => {
-		if (!aiId || logs.length === 0) return;
+		if (!aiId || logCount === 0) return;
 
 		const logsText = logs
-			.slice(-MAX_LOG_LINES)
+			.slice(Math.max(0, logCount - MAX_LOG_LINES), logCount)
 			.map((l) => l.message)
 			.join("\n");
 
@@ -87,7 +88,7 @@ export function AnalyzeLogs({ logs, context }: Props) {
 					variant="outline"
 					size="sm"
 					className="h-9"
-					disabled={logs.length === 0}
+					disabled={logCount === 0}
 					title="Analyze logs with AI"
 				>
 					<Bot className="mr-2 size-4" />
@@ -141,7 +142,7 @@ export function AnalyzeLogs({ logs, context }: Props) {
 								<Button
 									size="sm"
 									className="w-full"
-									disabled={!aiId || isPending || logs.length === 0}
+									disabled={!aiId || isPending || logCount === 0}
 									onClick={handleAnalyze}
 								>
 									{isPending ? (
@@ -153,9 +154,9 @@ export function AnalyzeLogs({ logs, context }: Props) {
 										<>
 											<Bot className="mr-2 h-3.5 w-3.5" />
 											Analyze{" "}
-											{logs.length > MAX_LOG_LINES
+											{logCount > MAX_LOG_LINES
 												? `last ${MAX_LOG_LINES}`
-												: logs.length}{" "}
+												: logCount}{" "}
 											lines
 										</>
 									)}
