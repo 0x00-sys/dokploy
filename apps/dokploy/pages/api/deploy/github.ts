@@ -136,6 +136,8 @@ export default async function handler(
 					type: "deploy",
 					applicationType: "application",
 					server: !!app.serverId,
+					serverId: app.serverId ?? undefined,
+					buildServerId: app.buildServerId ?? undefined,
 				};
 
 				if (IS_CLOUD && app.serverId) {
@@ -175,6 +177,7 @@ export default async function handler(
 					applicationType: "compose",
 					descriptionLog: `Hash: ${deploymentHash}`,
 					server: !!composeApp.serverId,
+					serverId: composeApp.serverId ?? undefined,
 				};
 
 				if (IS_CLOUD && composeApp.serverId) {
@@ -247,6 +250,8 @@ export default async function handler(
 					type: "deploy",
 					applicationType: "application",
 					server: !!app.serverId,
+					serverId: app.serverId ?? undefined,
+					buildServerId: app.buildServerId ?? undefined,
 				};
 
 				const shouldDeployPaths = shouldDeploy(
@@ -295,6 +300,7 @@ export default async function handler(
 					applicationType: "compose",
 					descriptionLog: `Hash: ${deploymentHash}`,
 					server: !!composeApp.serverId,
+					serverId: composeApp.serverId ?? undefined,
 				};
 
 				const shouldDeployPaths = shouldDeploy(
@@ -512,6 +518,7 @@ export default async function handler(
 					applicationType: "application-preview",
 					server: !!app.serverId,
 					previewDeploymentId,
+					serverId: app.serverId ?? undefined,
 				};
 
 				if (previewDeploymentId) {

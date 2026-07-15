@@ -7,7 +7,13 @@ import {
 } from "../../server/queues/in-memory-queue";
 import type { DeploymentJob } from "../../server/queues/queue-types";
 
-const appJob = (applicationId: string, serverId?: string): DeploymentJob => ({
+type ApplicationJob = Extract<
+	DeploymentJob,
+	{ applicationType: "application" }
+>;
+type ComposeJob = Extract<DeploymentJob, { applicationType: "compose" }>;
+
+const appJob = (applicationId: string, serverId?: string): ApplicationJob => ({
 	applicationId,
 	titleLog: "deploy",
 	descriptionLog: "",
@@ -16,7 +22,7 @@ const appJob = (applicationId: string, serverId?: string): DeploymentJob => ({
 	serverId,
 });
 
-const composeJob = (composeId: string, serverId?: string): DeploymentJob => ({
+const composeJob = (composeId: string, serverId?: string): ComposeJob => ({
 	composeId,
 	titleLog: "deploy",
 	descriptionLog: "",
@@ -40,6 +46,15 @@ describe("getPartition / getGroup", () => {
 	it("partitions by serverId, falling back to the local partition", () => {
 		expect(getPartition(appJob("a"))).toBe(LOCAL_PARTITION);
 		expect(getPartition(appJob("a", "server-1"))).toBe("server-1");
+	});
+
+	it("partitions application builds by their dedicated build server", () => {
+		expect(
+			getPartition({
+				...appJob("a", "runtime-server"),
+				buildServerId: "build-server",
+			}),
+		).toBe("build-server");
 	});
 
 	it("groups applications and compose by their id", () => {

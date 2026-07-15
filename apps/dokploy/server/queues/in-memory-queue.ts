@@ -6,9 +6,10 @@ import type { DeploymentJob } from "./queue-types";
  * Replaces BullMQ/Redis for deployments. The model is per-group FIFO with a
  * configurable concurrency per partition (server):
  *
- * - Jobs are partitioned by `serverId` (the local web server uses the
- *   `LOCAL_PARTITION` key). Each partition runs up to `concurrency` jobs at
- *   the same time, so two different applications can build concurrently.
+ * - Jobs are partitioned by their build execution server (the local web
+ *   server uses the `LOCAL_PARTITION` key). Each partition runs up to
+ *   `concurrency` jobs at the same time, so two different applications can
+ *   build concurrently.
  * - Within a partition, jobs that belong to the same group (same application
  *   or compose) never run in parallel — they are serialized FIFO. This avoids
  *   two builds of the same service stepping on each other (same code dir,
@@ -40,9 +41,11 @@ export interface InMemoryJob {
 
 type Processor = (job: InMemoryJob) => Promise<void>;
 
-/** Resolve the partition key (serverId) a job belongs to. */
+/** Resolve the server whose build-concurrency limit applies to this job. */
 export const getPartition = (data: DeploymentJob): string =>
-	data.serverId ?? LOCAL_PARTITION;
+	(data.applicationType === "application" ? data.buildServerId : undefined) ??
+	data.serverId ??
+	LOCAL_PARTITION;
 
 /** Resolve the FIFO group a job belongs to (the service being deployed). */
 export const getGroup = (data: DeploymentJob): string => {

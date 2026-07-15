@@ -253,6 +253,8 @@ export default async function handler(
 				type: "deploy",
 				applicationType: "application",
 				server: !!application.serverId,
+				serverId: application.serverId ?? undefined,
+				buildServerId: application.buildServerId ?? undefined,
 			};
 
 			if (IS_CLOUD && application.serverId) {
