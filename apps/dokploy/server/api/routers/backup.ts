@@ -180,6 +180,13 @@ export const backupRouter = createTRPCRouter({
 		.input(apiFindOneBackup)
 		.query(async ({ input, ctx }) => {
 			const backup = await findBackupById(input.backupId);
+			if (
+				backup.databaseType === "web-server" &&
+				ctx.user.role !== "owner" &&
+				ctx.user.role !== "admin"
+			) {
+				throw new TRPCError({ code: "UNAUTHORIZED" });
+			}
 
 			const serviceId =
 				backup.postgresId ||
