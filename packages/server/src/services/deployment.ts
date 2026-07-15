@@ -121,7 +121,7 @@ export const createDeployment = async (
 	await removeLastTenDeployments(
 		deployment.applicationId,
 		"application",
-		application.serverId,
+		application.buildServerId || application.serverId,
 	);
 	try {
 		const serverId = application.buildServerId || application.serverId;
