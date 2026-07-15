@@ -109,21 +109,11 @@ export const containerExists = async (containerName: string) => {
 };
 
 export const stopService = async (appName: string) => {
-	try {
-		await execAsync(`docker service scale ${appName}=0 `);
-	} catch (error) {
-		console.error(error);
-		return error;
-	}
+	await execAsync(`docker service scale ${appName}=0 `);
 };
 
 export const stopServiceRemote = async (serverId: string, appName: string) => {
-	try {
-		await execAsyncRemote(serverId, `docker service scale ${appName}=0 `);
-	} catch (error) {
-		console.error(error);
-		return error;
-	}
+	await execAsyncRemote(serverId, `docker service scale ${appName}=0 `);
 };
 
 export const getContainerByName = (name: string): Promise<ContainerInfo> => {
