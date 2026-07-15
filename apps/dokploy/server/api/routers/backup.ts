@@ -102,6 +102,13 @@ export const backupRouter = createTRPCRouter({
 						backup: ["create"],
 					});
 				}
+				const destination = await findDestinationById(input.destinationId);
+				if (destination.organizationId !== ctx.session.activeOrganizationId) {
+					throw new TRPCError({
+						code: "UNAUTHORIZED",
+						message: "You don't have access to this destination.",
+					});
+				}
 
 				if (IS_CLOUD) {
 					const dbType = (
@@ -165,6 +172,9 @@ export const backupRouter = createTRPCRouter({
 					resourceId: backup.backupId,
 				});
 			} catch (error) {
+				if (error instanceof TRPCError && error.code === "UNAUTHORIZED") {
+					throw error;
+				}
 				console.error(error);
 				throw new TRPCError({
 					code: "BAD_REQUEST",
