@@ -1,4 +1,7 @@
-import { getBackupCommand } from "@dokploy/server/utils/backups/utils";
+import {
+	getBackupCommand,
+	getLibsqlBackupCommand,
+} from "@dokploy/server/utils/backups/utils";
 import { expect, it } from "vitest";
 
 const postgresBackup = {
@@ -23,4 +26,11 @@ it("streams each database dump to storage exactly once", () => {
 	expect(command).toContain(
 		"2>> /tmp/backup.log | rclone rcat :s3:bucket/backup.sql.gz",
 	);
+});
+
+it("uses a single tar process for LibSQL backups", () => {
+	const command = getLibsqlBackupCommand("app.db");
+
+	expect(command).toContain("tar czf - -C /var/lib/sqld app.db");
+	expect(command).not.toContain("| gzip");
 });

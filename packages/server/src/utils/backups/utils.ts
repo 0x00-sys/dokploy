@@ -121,7 +121,7 @@ export const getMongoBackupCommand = (
 };
 
 export const getLibsqlBackupCommand = (database: string) => {
-	return `docker exec -i $CONTAINER_ID sh -c "tar cf - -C /var/lib/sqld ${database} | gzip"`;
+	return `docker exec -i $CONTAINER_ID sh -c "tar czf - -C /var/lib/sqld ${database}"`;
 };
 
 export const getServiceContainerCommand = (appName: string) => {
