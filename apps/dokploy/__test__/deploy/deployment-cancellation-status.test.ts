@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
 	audit: vi.fn(),
 	cancelDeployment: vi.fn(),
 	checkServicePermissionAndAccess: vi.fn(),
+	cleanQueuesByApplication: vi.fn(),
+	cleanQueuesByCompose: vi.fn(),
 	findApplicationById: vi.fn(),
 	findComposeById: vi.fn(),
 	updateApplicationStatus: vi.fn(),
@@ -31,8 +33,8 @@ vi.mock("@dokploy/server/services/permission", async (importOriginal) => ({
 vi.mock("@/server/api/utils/audit", () => ({ audit: mocks.audit }));
 
 vi.mock("@/server/queues/queueSetup", () => ({
-	cleanQueuesByApplication: vi.fn(),
-	cleanQueuesByCompose: vi.fn(),
+	cleanQueuesByApplication: mocks.cleanQueuesByApplication,
+	cleanQueuesByCompose: mocks.cleanQueuesByCompose,
 	killDockerBuild: vi.fn(),
 	myQueue: { add: vi.fn() },
 }));
@@ -92,6 +94,32 @@ it("records cancelled compose deployments as cancelled", async () => {
 		"compose-deployment",
 		"cancelled",
 	);
+});
+
+it("requires cancellation permission to clear application deployment queues", async () => {
+	await applicationRouter
+		.createCaller(context)
+		.cleanQueues({ applicationId: "application-1" });
+
+	expect(mocks.checkServicePermissionAndAccess).toHaveBeenCalledWith(
+		context,
+		"application-1",
+		{ deployment: ["cancel"] },
+	);
+	expect(mocks.cleanQueuesByApplication).toHaveBeenCalledWith("application-1");
+});
+
+it("requires cancellation permission to clear compose deployment queues", async () => {
+	await composeRouter
+		.createCaller(context)
+		.cleanQueues({ composeId: "compose-1" });
+
+	expect(mocks.checkServicePermissionAndAccess).toHaveBeenCalledWith(
+		context,
+		"compose-1",
+		{ deployment: ["cancel"] },
+	);
+	expect(mocks.cleanQueuesByCompose).toHaveBeenCalledWith("compose-1");
 });
 
 it("does not record an application cancellation when the deploy server rejects it", async () => {
