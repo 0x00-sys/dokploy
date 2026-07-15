@@ -667,6 +667,37 @@ export const removeDeployments = async (application: Application) => {
 	await removeDeploymentsByApplicationId(applicationId);
 };
 
+const removeDeploymentsWithLogs = async (
+	deploymentsToDelete: Deployment[],
+	serverId?: string | null,
+) => {
+	// removeDeployment only removes the log file locally (deployment rows never
+	// store the app's serverId), so remote log files are batched into a single
+	// remote command here.
+	let command = "";
+	for (const oldDeployment of deploymentsToDelete) {
+		try {
+			if (oldDeployment.rollbackId) {
+				await removeRollbackById(oldDeployment.rollbackId);
+			}
+			const logPath = path.join(oldDeployment.logPath);
+			if (serverId && logPath !== ".") {
+				command += `rm -rf ${logPath};`;
+			}
+			await removeDeployment(oldDeployment.deploymentId);
+		} catch (err) {
+			console.error(
+				`Failed to remove deployment ${oldDeployment.deploymentId} during cleanup:`,
+				err,
+			);
+		}
+	}
+
+	if (serverId && command) {
+		await execAsyncRemote(serverId, command);
+	}
+};
+
 const removeLastTenDeployments = async (
 	id: string,
 	type:
@@ -681,55 +712,7 @@ const removeLastTenDeployments = async (
 ) => {
 	const deploymentList = await getDeploymentsByType(id, type);
 	if (deploymentList.length > 10) {
-		const deploymentsToDelete = deploymentList.slice(10);
-		if (serverId) {
-			let command = "";
-			for (const oldDeployment of deploymentsToDelete) {
-				try {
-					const logPath = path.join(oldDeployment.logPath);
-					if (oldDeployment.rollbackId) {
-						await removeRollbackById(oldDeployment.rollbackId);
-					}
-
-					if (logPath && logPath !== ".") {
-						command += `rm -rf ${logPath};`;
-					}
-					await removeDeployment(oldDeployment.deploymentId);
-				} catch (err) {
-					console.error(
-						`Failed to remove deployment ${oldDeployment.deploymentId} during cleanup:`,
-						err,
-					);
-				}
-			}
-
-			if (command) {
-				await execAsyncRemote(serverId, command);
-			}
-		} else {
-			for (const oldDeployment of deploymentsToDelete) {
-				try {
-					if (oldDeployment.rollbackId) {
-						await removeRollbackById(oldDeployment.rollbackId);
-					}
-					const logPath = path.join(oldDeployment.logPath);
-					if (
-						logPath &&
-						logPath !== "." &&
-						existsSync(logPath) &&
-						!oldDeployment.errorMessage
-					) {
-						await fsPromises.unlink(logPath);
-					}
-					await removeDeployment(oldDeployment.deploymentId);
-				} catch (err) {
-					console.error(
-						`Failed to remove deployment ${oldDeployment.deploymentId} during cleanup:`,
-						err,
-					);
-				}
-			}
-		}
+		await removeDeploymentsWithLogs(deploymentList.slice(10), serverId);
 	}
 };
 
@@ -1036,17 +1019,21 @@ export const findAllDeploymentsByServerId = async (serverId: string) => {
 };
 
 export const clearOldDeployments = async (
-	appName: string,
-	serverId: string | null,
+	id: string,
+	type: "application" | "compose",
+	serverId?: string | null,
 ) => {
-	const { LOGS_PATH } = paths(!!serverId);
-	const folder = path.join(LOGS_PATH, appName);
-	const command = `
-		rm -rf ${folder};
-	`;
-	if (serverId) {
-		await execAsyncRemote(serverId, command);
-	} else {
-		await execAsync(command);
-	}
+	const deploymentList = await getDeploymentsByType(id, type);
+
+	const activeDeployment =
+		deploymentList.find((deployment) => deployment.status === "done") ??
+		deploymentList[0];
+
+	const deploymentsToDelete = deploymentList.filter(
+		(deployment) =>
+			deployment.deploymentId !== activeDeployment?.deploymentId &&
+			deployment.status !== "running",
+	);
+
+	await removeDeploymentsWithLogs(deploymentsToDelete, serverId);
 };
