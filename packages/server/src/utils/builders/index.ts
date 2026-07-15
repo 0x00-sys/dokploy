@@ -169,27 +169,37 @@ export const mechanizeDockerContainer = async (
 		UpdateConfig,
 	};
 
+	const service = docker.getService(appName);
+	let inspect: Awaited<ReturnType<typeof service.inspect>>;
 	try {
-		const service = docker.getService(appName);
-		const inspect = await service.inspect();
-
-		await service.update({
-			version: Number.parseInt(inspect.Version.Index),
-			...settings,
-			TaskTemplate: {
-				...settings.TaskTemplate,
-				ForceUpdate: inspect.Spec.TaskTemplate.ForceUpdate + 1,
-			},
-		});
+		inspect = await service.inspect();
 	} catch (error) {
-		console.log(error);
+		if (!isDockerNotFoundError(error)) {
+			throw error;
+		}
 		if (authConfig) {
 			await docker.createService(authConfig, settings);
 		} else {
 			await docker.createService(settings);
 		}
+		return;
 	}
+
+	await service.update({
+		version: Number.parseInt(inspect.Version.Index),
+		...settings,
+		TaskTemplate: {
+			...settings.TaskTemplate,
+			ForceUpdate: inspect.Spec.TaskTemplate.ForceUpdate + 1,
+		},
+	});
 };
+
+const isDockerNotFoundError = (error: unknown) =>
+	typeof error === "object" &&
+	error !== null &&
+	"statusCode" in error &&
+	error.statusCode === 404;
 
 const getImageName = async (application: ApplicationNested) => {
 	const { appName, sourceType, dockerImage, registry, buildRegistry } =
