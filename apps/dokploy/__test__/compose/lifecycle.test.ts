@@ -1,4 +1,5 @@
-import { stopCompose } from "@dokploy/server/services/compose";
+import { startCompose, stopCompose } from "@dokploy/server/services/compose";
+import * as composeBuilder from "@dokploy/server/utils/builders/compose";
 import * as execProcess from "@dokploy/server/utils/process/execAsync";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -33,6 +34,10 @@ vi.mock("@dokploy/server/utils/process/execAsync", () => ({
 	ExecError: class ExecError extends Error {},
 	execAsync: vi.fn(),
 	execAsyncRemote: vi.fn(),
+}));
+
+vi.mock("@dokploy/server/utils/builders/compose", () => ({
+	getBuildComposeCommand: vi.fn(),
 }));
 
 const compose = {
@@ -82,6 +87,38 @@ describe("stopCompose", () => {
 			{
 				cwd: expect.stringMatching(/\/compose\/compose-app\/code$/),
 			},
+		);
+	});
+});
+
+describe("startCompose", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mocks.findCompose.mockResolvedValue({
+			...compose,
+			composeType: "stack",
+		});
+		vi.mocked(composeBuilder.getBuildComposeCommand).mockResolvedValue(
+			"docker stack deploy -c deploy/compose.production.yml compose-app",
+		);
+		vi.mocked(execProcess.execAsyncRemote).mockResolvedValue({
+			stdout: "",
+			stderr: "",
+		});
+	});
+
+	it("recreates a stopped remote stack with the standard deployment command", async () => {
+		await startCompose(compose.composeId);
+
+		expect(composeBuilder.getBuildComposeCommand).toHaveBeenCalledWith(
+			expect.objectContaining({
+				composeId: compose.composeId,
+				composeType: "stack",
+			}),
+		);
+		expect(execProcess.execAsyncRemote).toHaveBeenCalledWith(
+			compose.serverId,
+			"docker stack deploy -c deploy/compose.production.yml compose-app",
 		);
 	});
 });
