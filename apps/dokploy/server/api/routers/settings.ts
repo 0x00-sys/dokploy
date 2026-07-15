@@ -83,6 +83,22 @@ import {
 	publicProcedure,
 } from "../trpc";
 
+const runTraefikAction = async (
+	serverId: string | undefined,
+	action: () => Promise<void>,
+	errorContext: string,
+) => {
+	if (serverId) {
+		await action();
+		return;
+	}
+
+	// Recreating the local proxy can interrupt this request before it completes.
+	void action().catch((error) => {
+		console.error(errorContext, error);
+	});
+};
+
 export const settingsRouter = createTRPCRouter({
 	getWebServerSettings: protectedProcedure.query(async () => {
 		if (IS_CLOUD) {
@@ -153,11 +169,10 @@ export const settingsRouter = createTRPCRouter({
 	reloadTraefik: adminProcedure
 		.input(apiServerSchema)
 		.mutation(async ({ input, ctx }) => {
-			// Run in background so the request returns immediately; avoids proxy timeouts.
-			void reloadDockerResource("dokploy-traefik", input?.serverId).catch(
-				(err) => {
-					console.error("reloadTraefik background:", err);
-				},
+			await runTraefikAction(
+				input?.serverId,
+				() => reloadDockerResource("dokploy-traefik", input?.serverId),
+				"reloadTraefik background:",
 			);
 			await audit(ctx, {
 				action: "reload",
@@ -198,15 +213,16 @@ export const settingsRouter = createTRPCRouter({
 				newPorts = ports.filter((port) => port.targetPort !== 8080);
 			}
 
-			// Run in background so the request returns immediately; client polls /api/health.
-			// Avoids proxy timeouts (520) while Traefik is recreated.
-			void writeTraefikSetup({
-				env: preparedEnv,
-				additionalPorts: newPorts,
-				serverId: input.serverId,
-			}).catch((err) => {
-				console.error("toggleDashboard background writeTraefikSetup:", err);
-			});
+			await runTraefikAction(
+				input.serverId,
+				() =>
+					writeTraefikSetup({
+						env: preparedEnv,
+						additionalPorts: newPorts,
+						serverId: input.serverId,
+					}),
+				"toggleDashboard background writeTraefikSetup:",
+			);
 			await audit(ctx, {
 				action: "update",
 				resourceType: "settings",
@@ -791,14 +807,16 @@ export const settingsRouter = createTRPCRouter({
 			const envs = prepareEnvironmentVariables(input.env);
 			const ports = await readPorts("dokploy-traefik", input?.serverId);
 
-			// Run in background so the request returns immediately; client polls /api/health.
-			void writeTraefikSetup({
-				env: envs,
-				additionalPorts: ports,
-				serverId: input.serverId,
-			}).catch((err) => {
-				console.error("writeTraefikEnv background writeTraefikSetup:", err);
-			});
+			await runTraefikAction(
+				input.serverId,
+				() =>
+					writeTraefikSetup({
+						env: envs,
+						additionalPorts: ports,
+						serverId: input.serverId,
+					}),
+				"writeTraefikEnv background writeTraefikSetup:",
+			);
 			await audit(ctx, {
 				action: "update",
 				resourceType: "settings",
@@ -1070,17 +1088,16 @@ export const settingsRouter = createTRPCRouter({
 				}
 				const preparedEnv = prepareEnvironmentVariables(env);
 
-				// Run in background so the request returns immediately; client polls /api/health.
-				void writeTraefikSetup({
-					env: preparedEnv,
-					additionalPorts: input.additionalPorts,
-					serverId: input.serverId,
-				}).catch((err) => {
-					console.error(
-						"updateTraefikPorts background writeTraefikSetup:",
-						err,
-					);
-				});
+				await runTraefikAction(
+					input.serverId,
+					() =>
+						writeTraefikSetup({
+							env: preparedEnv,
+							additionalPorts: input.additionalPorts,
+							serverId: input.serverId,
+						}),
+					"updateTraefikPorts background writeTraefikSetup:",
+				);
 				await audit(ctx, {
 					action: "update",
 					resourceType: "settings",
