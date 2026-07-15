@@ -13,8 +13,7 @@ import {
 	rebuildDatabase,
 	removeLibsqlById,
 	removeService,
-	startService,
-	startServiceRemote,
+	startConfiguredService,
 	stopService,
 	stopServiceRemote,
 	updateLibsqlById,
@@ -130,11 +129,7 @@ export const libsqlRouter = createTRPCRouter({
 			});
 			const libsql = await findLibsqlById(input.libsqlId);
 
-			if (libsql.serverId) {
-				await startServiceRemote(libsql.serverId, libsql.appName);
-			} else {
-				await startService(libsql.appName);
-			}
+			await startConfiguredService(libsql);
 			await updateLibsqlById(input.libsqlId, {
 				applicationStatus: "done",
 			});
@@ -379,11 +374,7 @@ export const libsqlRouter = createTRPCRouter({
 				applicationStatus: "idle",
 			});
 
-			if (libsql.serverId) {
-				await startServiceRemote(libsql.serverId, libsql.appName);
-			} else {
-				await startService(libsql.appName);
-			}
+			await startConfiguredService(libsql);
 			await updateLibsqlById(input.libsqlId, {
 				applicationStatus: "done",
 			});

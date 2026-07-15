@@ -16,8 +16,7 @@ import {
 	rebuildDatabase,
 	removeRedisById,
 	removeService,
-	startService,
-	startServiceRemote,
+	startConfiguredService,
 	stopService,
 	stopServiceRemote,
 	updateRedisById,
@@ -138,11 +137,7 @@ export const redisRouter = createTRPCRouter({
 			});
 			const redis = await findRedisById(input.redisId);
 
-			if (redis.serverId) {
-				await startServiceRemote(redis.serverId, redis.appName);
-			} else {
-				await startService(redis.appName);
-			}
+			await startConfiguredService(redis);
 			await updateRedisById(input.redisId, {
 				applicationStatus: "done",
 			});
@@ -171,11 +166,7 @@ export const redisRouter = createTRPCRouter({
 				applicationStatus: "idle",
 			});
 
-			if (redis.serverId) {
-				await startServiceRemote(redis.serverId, redis.appName);
-			} else {
-				await startService(redis.appName);
-			}
+			await startConfiguredService(redis);
 			await updateRedisById(input.redisId, {
 				applicationStatus: "done",
 			});

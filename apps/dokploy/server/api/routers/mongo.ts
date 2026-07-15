@@ -17,8 +17,7 @@ import {
 	rebuildDatabase,
 	removeMongoById,
 	removeService,
-	startService,
-	startServiceRemote,
+	startConfiguredService,
 	stopService,
 	stopServiceRemote,
 	updateMongoById,
@@ -147,11 +146,7 @@ export const mongoRouter = createTRPCRouter({
 			});
 			const service = await findMongoById(input.mongoId);
 
-			if (service.serverId) {
-				await startServiceRemote(service.serverId, service.appName);
-			} else {
-				await startService(service.appName);
-			}
+			await startConfiguredService(service);
 			await updateMongoById(input.mongoId, {
 				applicationStatus: "done",
 			});
@@ -309,11 +304,7 @@ export const mongoRouter = createTRPCRouter({
 				applicationStatus: "idle",
 			});
 
-			if (mongo.serverId) {
-				await startServiceRemote(mongo.serverId, mongo.appName);
-			} else {
-				await startService(mongo.appName);
-			}
+			await startConfiguredService(mongo);
 			await updateMongoById(input.mongoId, {
 				applicationStatus: "done",
 			});

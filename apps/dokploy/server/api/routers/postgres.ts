@@ -18,8 +18,7 @@ import {
 	rebuildDatabase,
 	removePostgresById,
 	removeService,
-	startService,
-	startServiceRemote,
+	startConfiguredService,
 	stopService,
 	stopServiceRemote,
 	updatePostgresById,
@@ -151,11 +150,7 @@ export const postgresRouter = createTRPCRouter({
 			});
 			const service = await findPostgresById(input.postgresId);
 
-			if (service.serverId) {
-				await startServiceRemote(service.serverId, service.appName);
-			} else {
-				await startService(service.appName);
-			}
+			await startConfiguredService(service);
 			await updatePostgresById(input.postgresId, {
 				applicationStatus: "done",
 			});
@@ -376,11 +371,7 @@ export const postgresRouter = createTRPCRouter({
 				applicationStatus: "idle",
 			});
 
-			if (postgres.serverId) {
-				await startServiceRemote(postgres.serverId, postgres.appName);
-			} else {
-				await startService(postgres.appName);
-			}
+			await startConfiguredService(postgres);
 			await updatePostgresById(input.postgresId, {
 				applicationStatus: "done",
 			});

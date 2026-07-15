@@ -17,8 +17,7 @@ import {
 	rebuildDatabase,
 	removeMySqlById,
 	removeService,
-	startService,
-	startServiceRemote,
+	startConfiguredService,
 	stopService,
 	stopServiceRemote,
 	updateMySqlById,
@@ -147,11 +146,7 @@ export const mysqlRouter = createTRPCRouter({
 			});
 			const service = await findMySqlById(input.mysqlId);
 
-			if (service.serverId) {
-				await startServiceRemote(service.serverId, service.appName);
-			} else {
-				await startService(service.appName);
-			}
+			await startConfiguredService(service);
 			await updateMySqlById(input.mysqlId, {
 				applicationStatus: "done",
 			});
@@ -307,11 +302,7 @@ export const mysqlRouter = createTRPCRouter({
 			await updateMySqlById(input.mysqlId, {
 				applicationStatus: "idle",
 			});
-			if (mysql.serverId) {
-				await startServiceRemote(mysql.serverId, mysql.appName);
-			} else {
-				await startService(mysql.appName);
-			}
+			await startConfiguredService(mysql);
 			await updateMySqlById(input.mysqlId, {
 				applicationStatus: "done",
 			});

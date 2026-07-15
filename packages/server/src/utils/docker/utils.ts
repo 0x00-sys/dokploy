@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { docker, paths } from "@dokploy/server/constants";
+import type { ServiceModeSwarm } from "@dokploy/server/db/schema/shared";
 import type { Compose } from "@dokploy/server/services/compose";
 import type { ContainerInfo, ResourceRequirements } from "dockerode";
 import { parse } from "dotenv";
@@ -359,6 +360,11 @@ export const startService = async (appName: string, replicas = 1) => {
 	}
 };
 
+const resolveServiceReplicas = (service: {
+	replicas: number;
+	modeSwarm?: ServiceModeSwarm | null;
+}) => service.modeSwarm?.Replicated?.Replicas ?? service.replicas;
+
 export const startServiceRemote = async (
 	serverId: string,
 	appName: string,
@@ -373,6 +379,18 @@ export const startServiceRemote = async (
 		console.error(error);
 		throw error;
 	}
+};
+
+export const startConfiguredService = async (service: {
+	appName: string;
+	serverId?: string | null;
+	replicas: number;
+	modeSwarm?: ServiceModeSwarm | null;
+}) => {
+	const replicas = resolveServiceReplicas(service);
+	return service.serverId
+		? startServiceRemote(service.serverId, service.appName, replicas)
+		: startService(service.appName, replicas);
 };
 
 export const removeService = async (
