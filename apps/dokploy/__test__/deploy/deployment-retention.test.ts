@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
 
 	return {
 		deleteChain,
+		insertChain,
 		db: {
 			delete: vi.fn(() => deleteChain),
 			insert: vi.fn(() => insertChain),
@@ -116,6 +117,45 @@ it("falls back to the runtime server when no build server is configured", async 
 	);
 
 	expect(cleanupCall?.[0]).toBe("runtime-server");
+});
+
+it("records the build server that owns the deployment log", async () => {
+	await createDeployment({
+		applicationId: "application-1",
+		title: "Deployment",
+		description: "",
+	});
+
+	expect(mocks.insertChain.values).toHaveBeenCalledWith(
+		expect.objectContaining({
+			buildServerId: "build-server",
+		}),
+	);
+	expect(mocks.insertChain.values.mock.calls[0]?.[0]).not.toHaveProperty(
+		"serverId",
+	);
+});
+
+it("records the runtime server when it owns the deployment log", async () => {
+	mocks.findApplicationById.mockResolvedValue({
+		applicationId: "application-1",
+		appName: "app-1",
+		serverId: "runtime-server",
+		buildServerId: null,
+	});
+	mocks.findServerById.mockResolvedValue({ serverId: "runtime-server" });
+
+	await createDeployment({
+		applicationId: "application-1",
+		title: "Deployment",
+		description: "",
+	});
+
+	expect(mocks.insertChain.values).toHaveBeenCalledWith(
+		expect.objectContaining({
+			serverId: "runtime-server",
+		}),
+	);
 });
 
 it("removes the oldest log before inserting an eleventh deployment", async () => {
