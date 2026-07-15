@@ -284,9 +284,13 @@ export const applicationRouter = createTRPCRouter({
 			});
 			const service = await findApplicationById(input.applicationId);
 			if (service.serverId) {
-				await stopServiceRemote(service.serverId, service.appName);
+				await stopServiceRemote(
+					service.serverId,
+					service.appName,
+					service.modeSwarm,
+				);
 			} else {
-				await stopService(service.appName);
+				await stopService(service.appName, service.modeSwarm);
 			}
 			await updateApplicationStatus(input.applicationId, "idle");
 			await audit(ctx, {

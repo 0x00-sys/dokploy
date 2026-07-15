@@ -163,9 +163,13 @@ export const mariadbRouter = createTRPCRouter({
 			const mariadb = await findMariadbById(input.mariadbId);
 
 			if (mariadb.serverId) {
-				await stopServiceRemote(mariadb.serverId, mariadb.appName);
+				await stopServiceRemote(
+					mariadb.serverId,
+					mariadb.appName,
+					mariadb.modeSwarm,
+				);
 			} else {
-				await stopService(mariadb.appName);
+				await stopService(mariadb.appName, mariadb.modeSwarm);
 			}
 			await updateMariadbById(input.mariadbId, {
 				applicationStatus: "idle",
@@ -338,9 +342,13 @@ export const mariadbRouter = createTRPCRouter({
 			});
 			const mariadb = await findMariadbById(input.mariadbId);
 			if (mariadb.serverId) {
-				await stopServiceRemote(mariadb.serverId, mariadb.appName);
+				await stopServiceRemote(
+					mariadb.serverId,
+					mariadb.appName,
+					mariadb.modeSwarm,
+				);
 			} else {
-				await stopService(mariadb.appName);
+				await stopService(mariadb.appName, mariadb.modeSwarm);
 			}
 			await updateMariadbById(input.mariadbId, {
 				applicationStatus: "idle",

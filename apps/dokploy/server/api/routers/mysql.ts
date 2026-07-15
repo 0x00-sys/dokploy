@@ -167,9 +167,9 @@ export const mysqlRouter = createTRPCRouter({
 			});
 			const mongo = await findMySqlById(input.mysqlId);
 			if (mongo.serverId) {
-				await stopServiceRemote(mongo.serverId, mongo.appName);
+				await stopServiceRemote(mongo.serverId, mongo.appName, mongo.modeSwarm);
 			} else {
-				await stopService(mongo.appName);
+				await stopService(mongo.appName, mongo.modeSwarm);
 			}
 			await updateMySqlById(input.mysqlId, {
 				applicationStatus: "idle",
@@ -300,9 +300,9 @@ export const mysqlRouter = createTRPCRouter({
 			});
 			const mysql = await findMySqlById(input.mysqlId);
 			if (mysql.serverId) {
-				await stopServiceRemote(mysql.serverId, mysql.appName);
+				await stopServiceRemote(mysql.serverId, mysql.appName, mysql.modeSwarm);
 			} else {
-				await stopService(mysql.appName);
+				await stopService(mysql.appName, mysql.modeSwarm);
 			}
 			await updateMySqlById(input.mysqlId, {
 				applicationStatus: "idle",

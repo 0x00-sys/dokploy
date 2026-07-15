@@ -151,9 +151,13 @@ export const libsqlRouter = createTRPCRouter({
 			const libsql = await findLibsqlById(input.libsqlId);
 
 			if (libsql.serverId) {
-				await stopServiceRemote(libsql.serverId, libsql.appName);
+				await stopServiceRemote(
+					libsql.serverId,
+					libsql.appName,
+					libsql.modeSwarm,
+				);
 			} else {
-				await stopService(libsql.appName);
+				await stopService(libsql.appName, libsql.modeSwarm);
 			}
 			await updateLibsqlById(input.libsqlId, {
 				applicationStatus: "idle",
@@ -371,9 +375,13 @@ export const libsqlRouter = createTRPCRouter({
 			});
 			const libsql = await findLibsqlById(input.libsqlId);
 			if (libsql.serverId) {
-				await stopServiceRemote(libsql.serverId, libsql.appName);
+				await stopServiceRemote(
+					libsql.serverId,
+					libsql.appName,
+					libsql.modeSwarm,
+				);
 			} else {
-				await stopService(libsql.appName);
+				await stopService(libsql.appName, libsql.modeSwarm);
 			}
 			await updateLibsqlById(input.libsqlId, {
 				applicationStatus: "idle",
