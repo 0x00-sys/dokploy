@@ -263,18 +263,13 @@ export const volumeBackupsRouter = createTRPCRouter({
 					volumeBackup: ["create"],
 				});
 			}
-			try {
-				const result = await runVolumeBackup(input.volumeBackupId);
-				await audit(ctx, {
-					action: "run",
-					resourceType: "volumeBackup",
-					resourceId: input.volumeBackupId,
-				});
-				return result;
-			} catch (error) {
-				console.error(error);
-				return false;
-			}
+			const result = await runVolumeBackup(input.volumeBackupId);
+			await audit(ctx, {
+				action: "run",
+				resourceType: "volumeBackup",
+				resourceId: input.volumeBackupId,
+			});
+			return result;
 		}),
 	restoreVolumeBackupWithLogs: withPermission("volumeBackup", "restore")
 		.meta({
