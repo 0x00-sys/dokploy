@@ -1,4 +1,4 @@
-import { IS_CLOUD } from "@dokploy/server";
+import { IS_CLOUD, paths } from "@dokploy/server";
 import {
 	execAsync,
 	execAsyncRemote,
@@ -125,9 +125,17 @@ export const cleanAllDeploymentQueue = async () => {
 export const killDockerBuild = async (
 	type: "application" | "compose",
 	serverId: string | null,
+	appName: string,
 ) => {
+	const escapeProcessPattern = (value: string) =>
+		value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+	const { APPLICATIONS_PATH, COMPOSE_PATH } = paths(true);
+
 	if (type === "application") {
-		const command = `pkill -2 -f "docker build"`;
+		const buildPath = escapeProcessPattern(
+			`${APPLICATIONS_PATH}/${appName}/code`,
+		);
+		const command = `pkill -2 -f '[/]${buildPath.slice(1)}'`;
 
 		if (serverId) {
 			await execAsyncRemote(serverId, command);
@@ -135,7 +143,8 @@ export const killDockerBuild = async (
 			await execAsync(command);
 		}
 	} else if (type === "compose") {
-		const command = `pkill -2 -f "docker compose"`;
+		const projectPath = `${COMPOSE_PATH}/${appName}/code`;
+		const command = `matched=0; for pid in $(pgrep -f '[d]ocker compose'); do if [ "$(readlink "/proc/$pid/cwd" 2>/dev/null)" = '${projectPath}' ]; then kill -2 "$pid" || exit $?; matched=1; fi; done; [ "$matched" -eq 1 ]`;
 
 		if (serverId) {
 			await execAsyncRemote(serverId, command);
