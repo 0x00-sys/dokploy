@@ -8,6 +8,7 @@ import {
 	ChartTooltip,
 	ChartTooltipContent,
 } from "@/components/ui/chart";
+import { convertDockerSizeToMegabytes } from "./docker-size";
 import type { DockerStatsJSON } from "./show-free-container-monitoring";
 
 interface Props {
@@ -29,8 +30,8 @@ export const DockerNetworkChart = ({ accumulativeData }: Props) => {
 	const transformedData = accumulativeData.map((item, index) => ({
 		time: item.time,
 		name: `Point ${index + 1}`,
-		inMB: item.value.inputMb,
-		outMB: item.value.outputMb,
+		inMB: convertDockerSizeToMegabytes(item.value.inputMb),
+		outMB: convertDockerSizeToMegabytes(item.value.outputMb),
 	}));
 
 	return (

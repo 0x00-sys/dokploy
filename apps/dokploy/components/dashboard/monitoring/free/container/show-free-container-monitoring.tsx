@@ -60,15 +60,15 @@ export interface DockerStats {
 	};
 	block: {
 		value: {
-			readMb: number;
-			writeMb: number;
+			readMb: string | number;
+			writeMb: string | number;
 		};
 		time: string;
 	};
 	network: {
 		value: {
-			inputMb: number;
-			outputMb: number;
+			inputMb: string | number;
+			outputMb: string | number;
 		};
 		time: string;
 	};
