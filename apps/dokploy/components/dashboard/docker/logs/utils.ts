@@ -7,6 +7,23 @@ export interface LogLine {
 	message: string;
 }
 
+export function appendLogChunk(
+	current: string,
+	chunk: string,
+	lineLimit: number,
+): string {
+	if (lineLimit <= 0) return "";
+
+	const combined = current + chunk;
+	const endsWithNewline = combined.endsWith("\n");
+	const logLines = combined.split("\n");
+
+	if (endsWithNewline) logLines.pop();
+
+	const limitedLines = logLines.slice(-lineLimit);
+	return limitedLines.join("\n") + (endsWithNewline ? "\n" : "");
+}
+
 interface LogStyle {
 	type: LogType;
 	variant: LogVariant;
