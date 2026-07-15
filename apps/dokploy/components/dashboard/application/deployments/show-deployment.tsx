@@ -12,8 +12,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { TerminalLine } from "../../docker/logs/terminal-line";
 import { type LogLine, parseLogs } from "../../docker/logs/utils";
+import { VirtualizedDeploymentLogs } from "./virtualized-deployment-logs";
 
 interface Props {
 	logPath: string | null;
@@ -39,12 +39,6 @@ export const ShowDeployment = ({
 	const [autoScroll, setAutoScroll] = useState(true);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [copied, setCopied] = useState(false);
-
-	const scrollToBottom = () => {
-		if (autoScroll && scrollRef.current) {
-			scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-		}
-	};
 
 	const handleScroll = () => {
 		if (!scrollRef.current) return;
@@ -97,14 +91,6 @@ export const ShowDeployment = ({
 		setFilteredLogs(filteredLogsResult);
 	}, [data, showExtraLogs]);
 
-	useEffect(() => {
-		scrollToBottom();
-
-		if (autoScroll && scrollRef.current) {
-			scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-		}
-	}, [filteredLogs, autoScroll]);
-
 	const handleCopy = () => {
 		const logContent = filteredLogs
 			.map(({ timestamp, message }: LogLine) =>
@@ -120,6 +106,7 @@ export const ShowDeployment = ({
 	};
 
 	const optionalErrors = parseLogs(errorMessage || "");
+	const displayedLogs = filteredLogs.length > 0 ? filteredLogs : optionalErrors;
 
 	return (
 		<Dialog
@@ -183,30 +170,16 @@ export const ShowDeployment = ({
 					className="h-[720px] overflow-y-auto space-y-0 border p-4 bg-background rounded custom-logs-scrollbar"
 				>
 					{" "}
-					{filteredLogs.length > 0 ? (
-						filteredLogs.map((log: LogLine, index: number) => (
-							<TerminalLine
-								key={`${log.rawTimestamp ?? ""}-${index}`}
-								log={log}
-								noTimestamp
-							/>
-						))
+					{displayedLogs.length > 0 ? (
+						<VirtualizedDeploymentLogs
+							logs={displayedLogs}
+							scrollRef={scrollRef}
+							autoScroll={autoScroll}
+						/>
 					) : (
-						<>
-							{optionalErrors.length > 0 ? (
-								optionalErrors.map((log: LogLine, index: number) => (
-									<TerminalLine
-										key={`extra-${log.rawTimestamp ?? ""}-${index}`}
-										log={log}
-										noTimestamp
-									/>
-								))
-							) : (
-								<div className="flex justify-center items-center h-full text-muted-foreground">
-									<Loader2 className="h-6 w-6 animate-spin" />
-								</div>
-							)}
-						</>
+						<div className="flex justify-center items-center h-full text-muted-foreground">
+							<Loader2 className="h-6 w-6 animate-spin" />
+						</div>
 					)}
 				</div>
 			</DialogContent>
