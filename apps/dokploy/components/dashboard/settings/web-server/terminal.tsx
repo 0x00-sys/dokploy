@@ -66,7 +66,7 @@ export const Terminal: React.FC<Props> = ({ id, serverId }) => {
 		term.loadAddon(addonAttach);
 		addonFit.fit();
 		return () => {
-			ws.readyState === WebSocket.OPEN && ws.close();
+			ws.close();
 		};
 	}, [id, serverId]);
 
