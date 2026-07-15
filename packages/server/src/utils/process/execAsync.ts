@@ -158,6 +158,7 @@ export const execAsyncRemote = async (
 			.once("ready", () => {
 				conn.exec(command, (err, stream) => {
 					if (err) {
+						conn.end();
 						onData?.(err.message);
 						reject(
 							new ExecError(`Remote command execution failed: ${err.message}`, {
