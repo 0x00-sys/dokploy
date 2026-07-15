@@ -18,6 +18,7 @@ import { applications, compose, github } from "@/server/db/schema";
 import type { DeploymentJob } from "@/server/queues/queue-types";
 import { myQueue } from "@/server/queues/queueSetup";
 import { deploy } from "@/server/utils/deploy";
+import { canQueuePreviewDeployment } from "@/server/utils/preview-limit";
 import {
 	extractCommitMessage,
 	extractHash,
@@ -489,12 +490,17 @@ export default async function handler(
 					if (!hasLabel) continue;
 				}
 
-				const previewLimit = app?.previewLimit || 0;
-				if (app?.previewDeployments?.length > previewLimit) {
-					continue;
-				}
 				const previewDeploymentResult =
 					await findPreviewDeploymentByApplicationId(app.applicationId, prId);
+				if (
+					!canQueuePreviewDeployment({
+						hasExistingPreview: Boolean(previewDeploymentResult),
+						previewCount: app.previewDeployments.length,
+						previewLimit: app.previewLimit,
+					})
+				) {
+					continue;
+				}
 
 				let previewDeploymentId =
 					previewDeploymentResult?.previewDeploymentId || "";
