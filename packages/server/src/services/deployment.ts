@@ -592,16 +592,19 @@ export const createDeploymentVolumeBackup = async (
 	}
 };
 
+const deleteDeploymentRecord = (deploymentId: string) =>
+	db
+		.delete(deployments)
+		.where(eq(deployments.deploymentId, deploymentId))
+		.returning()
+		.then((result) => result[0]);
+
 export const removeDeployment = async (
 	deploymentId: string,
 	targetServerId?: string | null,
 ) => {
 	try {
-		const deployment = await db
-			.delete(deployments)
-			.where(eq(deployments.deploymentId, deploymentId))
-			.returning()
-			.then((result) => result[0]);
+		const deployment = await deleteDeploymentRecord(deploymentId);
 
 		if (!deployment) {
 			return null;
@@ -677,20 +680,25 @@ const removeDeploymentsWithLogs = async (
 	deploymentsToDelete: Deployment[],
 	serverId?: string | null,
 ) => {
-	// removeDeployment only removes the log file locally (deployment rows never
-	// store the app's serverId), so remote log files are batched into a single
-	// remote command here.
-	let command = "";
+	const commands = new Map<string | null, string>();
 	for (const oldDeployment of deploymentsToDelete) {
 		try {
 			if (oldDeployment.rollbackId) {
 				await removeRollbackById(oldDeployment.rollbackId);
 			}
 			const logPath = path.join(oldDeployment.logPath);
-			if (serverId && logPath !== ".") {
-				command += `rm -rf ${logPath};`;
+			await deleteDeploymentRecord(oldDeployment.deploymentId);
+			if (logPath !== ".") {
+				const targetServerId =
+					oldDeployment.buildServerId ||
+					oldDeployment.serverId ||
+					serverId ||
+					null;
+				commands.set(
+					targetServerId,
+					`${commands.get(targetServerId) || ""}rm -rf ${logPath};`,
+				);
 			}
-			await removeDeployment(oldDeployment.deploymentId);
 		} catch (err) {
 			console.error(
 				`Failed to remove deployment ${oldDeployment.deploymentId} during cleanup:`,
@@ -699,8 +707,12 @@ const removeDeploymentsWithLogs = async (
 		}
 	}
 
-	if (serverId && command) {
-		await execAsyncRemote(serverId, command);
+	for (const [targetServerId, command] of commands) {
+		if (targetServerId) {
+			await execAsyncRemote(targetServerId, command);
+		} else {
+			await execAsync(command);
+		}
 	}
 };
 
