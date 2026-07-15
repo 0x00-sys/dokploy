@@ -103,7 +103,9 @@ export const setupDockerStatsMonitoringSocketServer = (
 					}),
 				};
 
-				let containerId: string | undefined;
+				const statsFormat = `\'{"BlockIO":"{{.BlockIO}}","CPUPerc":"{{.CPUPerc}}","Container":"{{.Container}}","ID":"{{.ID}}","MemPerc":"{{.MemPerc}}","MemUsage":"{{.MemUsage}}","Name":"{{.Name}}","NetIO":"{{.NetIO}}"}\'`;
+				let stdout = "";
+				let stderr = "";
 				if (serverId) {
 					const remoteFilter =
 						appType === "application"
@@ -113,27 +115,29 @@ export const setupDockerStatsMonitoringSocketServer = (
 								: `name=${appName}`;
 					const result = await execAsyncRemote(
 						serverId,
-						`docker ps -q --filter "${remoteFilter}" | head -1`,
+						`container_id=$(docker ps -q --filter "${remoteFilter}" | head -1); if [ -n "$container_id" ]; then docker stats "$container_id" --no-stream --format ${statsFormat}; fi`,
 					);
-					containerId = result.stdout.trim() || undefined;
+					stdout = result.stdout;
+					stderr = result.stderr;
 				} else {
 					const containers = await docker.listContainers({
 						filters: JSON.stringify(filter),
 					});
 					const container = containers[0];
-					if (container?.State === "running") containerId = container.Id;
+					if (container?.State === "running") {
+						const result = await execAsync(
+							`docker stats ${container.Id} --no-stream --format ${statsFormat}`,
+						);
+						stdout = result.stdout;
+						stderr = result.stderr;
+					}
 				}
-
-				if (!containerId) {
-					ws.close(4000, "Container not running");
-					return;
-				}
-				const statsCommand = `docker stats ${containerId} --no-stream --format \'{"BlockIO":"{{.BlockIO}}","CPUPerc":"{{.CPUPerc}}","Container":"{{.Container}}","ID":"{{.ID}}","MemPerc":"{{.MemPerc}}","MemUsage":"{{.MemUsage}}","Name":"{{.Name}}","NetIO":"{{.NetIO}}"}\'`;
-				const { stdout, stderr } = serverId
-					? await execAsyncRemote(serverId, statsCommand)
-					: await execAsync(statsCommand);
 				if (stderr) {
 					console.error("Docker stats error:", stderr);
+					return;
+				}
+				if (!stdout.trim()) {
+					ws.close(4000, "Container not running");
 					return;
 				}
 				const stat = JSON.parse(stdout);

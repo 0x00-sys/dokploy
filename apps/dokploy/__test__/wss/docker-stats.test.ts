@@ -106,13 +106,11 @@ describe("Docker stats monitoring", () => {
 
 	it("collects stats from the selected remote server", async () => {
 		mocks.listContainers.mockResolvedValue([]);
-		mocks.execAsyncRemote
-			.mockResolvedValueOnce({ stdout: "remote-container\n", stderr: "" })
-			.mockResolvedValueOnce({
-				stdout:
-					'{"BlockIO":"0B / 0B","CPUPerc":"0%","Container":"app","ID":"remote-container","MemPerc":"0%","MemUsage":"0B / 0B","Name":"app","NetIO":"0B / 0B"}',
-				stderr: "",
-			});
+		mocks.execAsyncRemote.mockResolvedValueOnce({
+			stdout:
+				'{"BlockIO":"0B / 0B","CPUPerc":"0%","Container":"app","ID":"remote-container","MemPerc":"0%","MemUsage":"0B / 0B","Name":"app","NetIO":"0B / 0B"}',
+			stderr: "",
+		});
 
 		const server = { on: vi.fn() };
 		setupDockerStatsMonitoringSocketServer(server as never);
@@ -135,15 +133,12 @@ describe("Docker stats monitoring", () => {
 		await flush();
 
 		expect(mocks.findServerById).toHaveBeenCalledWith("server-1");
-		expect(mocks.execAsyncRemote).toHaveBeenNthCalledWith(
-			1,
+		expect(mocks.execAsyncRemote).toHaveBeenCalledOnce();
+		expect(mocks.execAsyncRemote).toHaveBeenCalledWith(
 			"server-1",
-			'docker ps -q --filter "label=com.docker.swarm.service.name=app" | head -1',
-		);
-		expect(mocks.execAsyncRemote).toHaveBeenNthCalledWith(
-			2,
-			"server-1",
-			expect.stringContaining("docker stats remote-container --no-stream"),
+			expect.stringMatching(
+				/docker ps .*com\.docker\.swarm\.service\.name=app.*docker stats/,
+			),
 		);
 		expect(mocks.listContainers).not.toHaveBeenCalled();
 		expect(ws.send).toHaveBeenCalledOnce();
