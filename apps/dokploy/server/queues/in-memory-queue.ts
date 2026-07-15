@@ -105,6 +105,16 @@ export class InMemoryQueue {
 		return partition;
 	}
 
+	private deletePartitionIfIdle(key: string, partition: Partition) {
+		if (
+			this.partitions.get(key) === partition &&
+			partition.waiting.length === 0 &&
+			partition.active.length === 0
+		) {
+			this.partitions.delete(key);
+		}
+	}
+
 	/**
 	 * Register the worker that processes each job. Registering a processor also
 	 * starts the queue: in dev (tsx/Next) the module that calls `run()` and the
@@ -171,10 +181,13 @@ export class InMemoryQueue {
 
 	/** Remove a single waiting job by id. Active jobs cannot be removed. */
 	remove(id: string): Promise<void> {
-		for (const partition of this.partitions.values()) {
+		for (const [key, partition] of this.partitions) {
 			const before = partition.waiting.length;
 			partition.waiting = partition.waiting.filter((job) => job.id !== id);
-			if (partition.waiting.length !== before) break;
+			if (partition.waiting.length !== before) {
+				this.deletePartitionIfIdle(key, partition);
+				break;
+			}
 		}
 		return Promise.resolve();
 	}
@@ -182,12 +195,13 @@ export class InMemoryQueue {
 	/** Remove waiting jobs matching a predicate. Active jobs are not affected. */
 	removeWaiting(predicate: (data: DeploymentJob) => boolean): number {
 		let removed = 0;
-		for (const partition of this.partitions.values()) {
+		for (const [key, partition] of this.partitions) {
 			partition.waiting = partition.waiting.filter((job) => {
 				const match = predicate(job.data);
 				if (match) removed++;
 				return !match;
 			});
+			this.deletePartitionIfIdle(key, partition);
 		}
 		return removed;
 	}
@@ -195,9 +209,10 @@ export class InMemoryQueue {
 	/** Drop every waiting job across all partitions. */
 	clearWaiting(): number {
 		let removed = 0;
-		for (const partition of this.partitions.values()) {
+		for (const [key, partition] of this.partitions) {
 			removed += partition.waiting.length;
 			partition.waiting = [];
+			this.deletePartitionIfIdle(key, partition);
 		}
 		return removed;
 	}
@@ -240,6 +255,8 @@ export class InMemoryQueue {
 
 			void this.runJob(job);
 		}
+
+		this.deletePartitionIfIdle(key, partition);
 	}
 
 	private async runJob(job: InternalJob) {
@@ -254,6 +271,7 @@ export class InMemoryQueue {
 			if (partition) {
 				partition.active = partition.active.filter((j) => j.id !== job.id);
 				partition.activeGroups.delete(job.group);
+				this.deletePartitionIfIdle(job.partition, partition);
 			}
 			// A slot (and possibly the group) freed up — try to schedule more.
 			void this.drainPartition(job.partition);

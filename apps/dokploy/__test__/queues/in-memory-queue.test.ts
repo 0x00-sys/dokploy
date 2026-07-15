@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	getGroup,
 	getPartition,
@@ -259,6 +259,53 @@ describe("InMemoryQueue concurrency", () => {
 });
 
 describe("InMemoryQueue job management", () => {
+	it("stops resolving concurrency for partitions after their jobs finish", async () => {
+		const resolveConcurrency = vi.fn(() => 1);
+		const queue = new InMemoryQueue({ resolveConcurrency });
+		queue.process(async () => {});
+
+		await queue.add(appJob("first", "server-1"));
+		await flush();
+		resolveConcurrency.mockClear();
+
+		await queue.add(appJob("second", "server-2"));
+		await flush();
+
+		expect(resolveConcurrency).not.toHaveBeenCalledWith("server-1");
+	});
+
+	it("releases idle partitions when waiting jobs are cleared", async () => {
+		const resolveConcurrency = vi.fn(() => 1);
+		const queue = new InMemoryQueue({ resolveConcurrency });
+
+		await queue.add(appJob("waiting", "server-1"));
+		expect(queue.clearWaiting()).toBe(1);
+
+		queue.process(async () => {});
+		await flush();
+
+		expect(resolveConcurrency).not.toHaveBeenCalled();
+	});
+
+	it("releases idle partitions when a service's waiting jobs are removed", async () => {
+		const resolveConcurrency = vi.fn(() => 1);
+		const queue = new InMemoryQueue({ resolveConcurrency });
+
+		await queue.add(appJob("waiting", "server-1"));
+		expect(
+			queue.removeWaiting(
+				(data) =>
+					data.applicationType === "application" &&
+					data.applicationId === "waiting",
+			),
+		).toBe(1);
+
+		queue.process(async () => {});
+		await flush();
+
+		expect(resolveConcurrency).not.toHaveBeenCalled();
+	});
+
 	it("lists waiting jobs and removes them by predicate", async () => {
 		const block = deferred();
 		const queue = new InMemoryQueue({ resolveConcurrency: () => 1 });
