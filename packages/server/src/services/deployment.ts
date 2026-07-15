@@ -932,7 +932,9 @@ export const updateDeploymentStatus = async (
 		.set({
 			status: deploymentStatus,
 			finishedAt:
-				deploymentStatus === "done" || deploymentStatus === "error"
+				deploymentStatus === "done" ||
+				deploymentStatus === "error" ||
+				deploymentStatus === "cancelled"
 					? new Date().toISOString()
 					: null,
 		})
