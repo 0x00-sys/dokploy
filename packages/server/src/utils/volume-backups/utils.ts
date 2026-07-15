@@ -187,5 +187,6 @@ export const runVolumeBackup = async (volumeBackupId: string) => {
 				notificationError,
 			);
 		}
+		throw error;
 	}
 };
