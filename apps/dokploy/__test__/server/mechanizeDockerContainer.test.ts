@@ -12,24 +12,38 @@ type MockCreateServiceOptions = {
 	[key: string]: unknown;
 };
 
-const { inspectMock, getServiceMock, createServiceMock, getRemoteDockerMock } =
-	vi.hoisted(() => {
-		const inspect = vi.fn<() => Promise<never>>();
-		const getService = vi.fn(() => ({ inspect }));
-		const createService = vi.fn<
-			(opts: MockCreateServiceOptions) => Promise<void>
-		>(async () => undefined);
-		const getRemoteDocker = vi.fn(async () => ({
-			getService,
-			createService,
-		}));
-		return {
-			inspectMock: inspect,
-			getServiceMock: getService,
-			createServiceMock: createService,
-			getRemoteDockerMock: getRemoteDocker,
-		};
-	});
+type MockServiceInspect = {
+	Version: { Index: string };
+	Spec: { TaskTemplate: { ForceUpdate: number } };
+};
+
+const {
+	inspectMock,
+	updateMock,
+	getServiceMock,
+	createServiceMock,
+	getRemoteDockerMock,
+} = vi.hoisted(() => {
+	const inspect = vi.fn<() => Promise<MockServiceInspect>>();
+	const update = vi.fn<(opts: MockCreateServiceOptions) => Promise<void>>(
+		async () => undefined,
+	);
+	const getService = vi.fn(() => ({ inspect, update }));
+	const createService = vi.fn<
+		(opts: MockCreateServiceOptions) => Promise<void>
+	>(async () => undefined);
+	const getRemoteDocker = vi.fn(async () => ({
+		getService,
+		createService,
+	}));
+	return {
+		inspectMock: inspect,
+		updateMock: update,
+		getServiceMock: getService,
+		createServiceMock: createService,
+		getRemoteDockerMock: getRemoteDocker,
+	};
+});
 
 vi.mock("@dokploy/server/utils/servers/remote-docker", () => ({
 	getRemoteDocker: getRemoteDockerMock,
@@ -66,7 +80,11 @@ const createApplication = (
 describe("mechanizeDockerContainer", () => {
 	beforeEach(() => {
 		inspectMock.mockReset();
-		inspectMock.mockRejectedValue(new Error("service not found"));
+		inspectMock.mockRejectedValue(
+			Object.assign(new Error("service not found"), { statusCode: 404 }),
+		);
+		updateMock.mockReset();
+		updateMock.mockResolvedValue(undefined);
 		getServiceMock.mockClear();
 		createServiceMock.mockClear();
 		getRemoteDockerMock.mockClear();
@@ -74,6 +92,36 @@ describe("mechanizeDockerContainer", () => {
 			getService: getServiceMock,
 			createService: createServiceMock,
 		});
+	});
+
+	it("propagates service inspection failures instead of attempting creation", async () => {
+		const inspectError = Object.assign(new Error("daemon unavailable"), {
+			statusCode: 500,
+		});
+		inspectMock.mockRejectedValue(inspectError);
+
+		await expect(mechanizeDockerContainer(createApplication())).rejects.toBe(
+			inspectError,
+		);
+
+		expect(createServiceMock).not.toHaveBeenCalled();
+		expect(updateMock).not.toHaveBeenCalled();
+	});
+
+	it("propagates service update failures instead of attempting creation", async () => {
+		const updateError = new Error("update rejected");
+		inspectMock.mockResolvedValue({
+			Version: { Index: "7" },
+			Spec: { TaskTemplate: { ForceUpdate: 3 } },
+		});
+		updateMock.mockRejectedValue(updateError);
+
+		await expect(mechanizeDockerContainer(createApplication())).rejects.toBe(
+			updateError,
+		);
+
+		expect(updateMock).toHaveBeenCalledTimes(1);
+		expect(createServiceMock).not.toHaveBeenCalled();
 	});
 
 	it("passes stopGracePeriodSwarm as a number and keeps zero values", async () => {
