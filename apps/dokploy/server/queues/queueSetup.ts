@@ -63,6 +63,7 @@ const createInMemoryQueue = (): DeploymentQueue => {
 // worker and the `add()` calls would land on different queue instances.
 const globalForQueue = globalThis as unknown as {
 	__dokployDeploymentQueue?: DeploymentQueue;
+	__dokployDeploymentQueueShutdownRegistered?: boolean;
 };
 
 if (!globalForQueue.__dokployDeploymentQueue) {
@@ -88,7 +89,8 @@ export const getJobsByComposeId = async (composeId: string) => {
 	return jobs.filter((job) => (job.data as any)?.composeId === composeId);
 };
 
-if (!IS_CLOUD) {
+if (!IS_CLOUD && !globalForQueue.__dokployDeploymentQueueShutdownRegistered) {
+	globalForQueue.__dokployDeploymentQueueShutdownRegistered = true;
 	process.on("SIGTERM", () => {
 		myQueue.close();
 		process.exit(0);
