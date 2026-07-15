@@ -14,7 +14,29 @@ type MockCreateServiceOptions = {
 
 type MockServiceInspect = {
 	Version: { Index: string };
-	Spec: { TaskTemplate: { ForceUpdate: number } };
+	Spec: {
+		TaskTemplate: { ForceUpdate: number };
+		Mode?: {
+			Replicated?: { Replicas?: number };
+			Global?: Record<string, never>;
+		};
+	};
+	UpdateStatus?: {
+		State?:
+			| "updating"
+			| "paused"
+			| "completed"
+			| "rollback_started"
+			| "rollback_paused"
+			| "rollback_completed";
+		StartedAt?: string;
+		Message?: string;
+	};
+};
+
+type MockListedService = {
+	Spec?: { Name?: string };
+	ServiceStatus?: { DesiredTasks?: number };
 };
 
 const {
@@ -22,9 +44,13 @@ const {
 	updateMock,
 	getServiceMock,
 	createServiceMock,
+	listServicesMock,
 	getRemoteDockerMock,
 } = vi.hoisted(() => {
-	const inspect = vi.fn<() => Promise<MockServiceInspect>>();
+	const inspect =
+		vi.fn<
+			(options?: { abortSignal?: AbortSignal }) => Promise<MockServiceInspect>
+		>();
 	const update = vi.fn<(opts: MockCreateServiceOptions) => Promise<void>>(
 		async () => undefined,
 	);
@@ -32,15 +58,20 @@ const {
 	const createService = vi.fn<
 		(opts: MockCreateServiceOptions) => Promise<void>
 	>(async () => undefined);
+	const listServices = vi.fn<
+		(options?: unknown) => Promise<MockListedService[]>
+	>(async () => []);
 	const getRemoteDocker = vi.fn(async () => ({
 		getService,
 		createService,
+		listServices,
 	}));
 	return {
 		inspectMock: inspect,
 		updateMock: update,
 		getServiceMock: getService,
 		createServiceMock: createService,
+		listServicesMock: listServices,
 		getRemoteDockerMock: getRemoteDocker,
 	};
 });
@@ -79,6 +110,7 @@ const createApplication = (
 
 describe("mechanizeDockerContainer", () => {
 	beforeEach(() => {
+		vi.useRealTimers();
 		inspectMock.mockReset();
 		inspectMock.mockRejectedValue(
 			Object.assign(new Error("service not found"), { statusCode: 404 }),
@@ -87,10 +119,12 @@ describe("mechanizeDockerContainer", () => {
 		updateMock.mockResolvedValue(undefined);
 		getServiceMock.mockClear();
 		createServiceMock.mockClear();
+		listServicesMock.mockClear();
 		getRemoteDockerMock.mockClear();
 		getRemoteDockerMock.mockResolvedValue({
 			getService: getServiceMock,
 			createService: createServiceMock,
+			listServices: listServicesMock,
 		});
 	});
 
@@ -121,6 +155,313 @@ describe("mechanizeDockerContainer", () => {
 		);
 
 		expect(updateMock).toHaveBeenCalledTimes(1);
+		expect(createServiceMock).not.toHaveBeenCalled();
+	});
+
+	it("waits for the current Swarm update to complete", async () => {
+		vi.useFakeTimers();
+		inspectMock
+			.mockResolvedValueOnce({
+				Version: { Index: "7" },
+				Spec: { TaskTemplate: { ForceUpdate: 3 } },
+				UpdateStatus: {
+					State: "completed",
+					StartedAt: "2026-01-01T00:00:00Z",
+				},
+			})
+			.mockResolvedValueOnce({
+				Version: { Index: "8" },
+				Spec: { TaskTemplate: { ForceUpdate: 4 } },
+				UpdateStatus: {
+					State: "updating",
+					StartedAt: "2026-01-01T00:01:00Z",
+				},
+			})
+			.mockResolvedValueOnce({
+				Version: { Index: "8" },
+				Spec: { TaskTemplate: { ForceUpdate: 4 } },
+				UpdateStatus: {
+					State: "completed",
+					StartedAt: "2026-01-01T00:01:00Z",
+					Message: "update completed",
+				},
+			});
+
+		const deployment = mechanizeDockerContainer(createApplication());
+		await vi.advanceTimersByTimeAsync(5000);
+
+		await expect(deployment).resolves.toBeUndefined();
+		expect(inspectMock).toHaveBeenCalledTimes(3);
+		expect(updateMock).toHaveBeenCalledTimes(1);
+		expect(createServiceMock).not.toHaveBeenCalled();
+	});
+
+	it("fails a deployment when Swarm rolls back the current update", async () => {
+		inspectMock
+			.mockResolvedValueOnce({
+				Version: { Index: "7" },
+				Spec: { TaskTemplate: { ForceUpdate: 3 } },
+				UpdateStatus: {
+					State: "completed",
+					StartedAt: "2026-01-01T00:00:00Z",
+				},
+			})
+			.mockResolvedValueOnce({
+				Version: { Index: "8" },
+				Spec: { TaskTemplate: { ForceUpdate: 3 } },
+				UpdateStatus: {
+					State: "rollback_completed",
+					StartedAt: "2026-01-01T00:01:00Z",
+					Message: "rollback completed",
+				},
+			});
+
+		await expect(mechanizeDockerContainer(createApplication())).rejects.toThrow(
+			"Swarm service update failed: rollback completed",
+		);
+
+		expect(createServiceMock).not.toHaveBeenCalled();
+	});
+
+	it("fails when a newer Swarm update supersedes the deployment", async () => {
+		inspectMock
+			.mockResolvedValueOnce({
+				Version: { Index: "7" },
+				Spec: { TaskTemplate: { ForceUpdate: 3 } },
+			})
+			.mockResolvedValueOnce({
+				Version: { Index: "9" },
+				Spec: { TaskTemplate: { ForceUpdate: 5 } },
+				UpdateStatus: {
+					State: "completed",
+					StartedAt: "2026-01-01T00:02:00Z",
+				},
+			});
+
+		await expect(mechanizeDockerContainer(createApplication())).rejects.toThrow(
+			"Swarm service update was superseded by a newer update",
+		);
+	});
+
+	it("allows configured Swarm rollouts to exceed the default timeout", async () => {
+		vi.useFakeTimers();
+		inspectMock
+			.mockResolvedValueOnce({
+				Version: { Index: "7" },
+				Spec: { TaskTemplate: { ForceUpdate: 3 } },
+			})
+			.mockResolvedValue({
+				Version: { Index: "8" },
+				Spec: { TaskTemplate: { ForceUpdate: 4 } },
+				UpdateStatus: {
+					State: "updating",
+					StartedAt: "2026-01-01T00:01:00Z",
+				},
+			});
+
+		const deployment = mechanizeDockerContainer(
+			createApplication({
+				replicas: 2,
+				updateConfigSwarm: {
+					Parallelism: 1,
+					Delay: 11 * 60 * 1e9,
+					Order: "start-first",
+				},
+			}),
+		);
+		let settled = false;
+		deployment.finally(() => {
+			settled = true;
+		});
+
+		await vi.advanceTimersByTimeAsync(42 * 60 * 1000 + 55 * 1000);
+
+		expect(settled).toBe(false);
+		inspectMock.mockResolvedValueOnce({
+			Version: { Index: "8" },
+			Spec: { TaskTemplate: { ForceUpdate: 4 } },
+			UpdateStatus: {
+				State: "completed",
+				StartedAt: "2026-01-01T00:01:00Z",
+			},
+		});
+		await vi.advanceTimersByTimeAsync(5000);
+		await expect(deployment).resolves.toBeUndefined();
+	});
+
+	it("uses the requested custom replica count for the rollout timeout", async () => {
+		vi.useFakeTimers();
+		inspectMock
+			.mockResolvedValueOnce({
+				Version: { Index: "7" },
+				Spec: {
+					TaskTemplate: { ForceUpdate: 3 },
+					Mode: { Replicated: { Replicas: 1 } },
+				},
+			})
+			.mockResolvedValue({
+				Version: { Index: "8" },
+				Spec: {
+					TaskTemplate: { ForceUpdate: 4 },
+					Mode: { Replicated: { Replicas: 20 } },
+				},
+				UpdateStatus: {
+					State: "updating",
+					StartedAt: "2026-01-01T00:01:00Z",
+				},
+			});
+
+		const deployment = mechanizeDockerContainer(
+			createApplication({
+				modeSwarm: { Replicated: { Replicas: 20 } },
+				updateConfigSwarm: {
+					Parallelism: 1,
+					Delay: 60 * 1e9,
+					Order: "start-first",
+				},
+			}),
+		);
+		let settled = false;
+		deployment.finally(() => {
+			settled = true;
+		});
+
+		await vi.advanceTimersByTimeAsync(30 * 60 * 1000 + 55 * 1000);
+
+		expect(settled).toBe(false);
+		inspectMock.mockResolvedValueOnce({
+			Version: { Index: "8" },
+			Spec: {
+				TaskTemplate: { ForceUpdate: 4 },
+				Mode: { Replicated: { Replicas: 20 } },
+			},
+			UpdateStatus: {
+				State: "completed",
+				StartedAt: "2026-01-01T00:01:00Z",
+			},
+		});
+		await vi.advanceTimersByTimeAsync(5000);
+		await expect(deployment).resolves.toBeUndefined();
+	});
+
+	it("gets the desired task count for a global Swarm service", async () => {
+		vi.useFakeTimers();
+		listServicesMock.mockResolvedValueOnce([
+			{
+				Spec: { Name: "test-app" },
+				ServiceStatus: { DesiredTasks: 20 },
+			},
+		]);
+		inspectMock
+			.mockResolvedValueOnce({
+				Version: { Index: "7" },
+				Spec: {
+					TaskTemplate: { ForceUpdate: 3 },
+					Mode: { Global: {} },
+				},
+			})
+			.mockResolvedValue({
+				Version: { Index: "8" },
+				Spec: {
+					TaskTemplate: { ForceUpdate: 4 },
+					Mode: { Global: {} },
+				},
+				UpdateStatus: {
+					State: "updating",
+					StartedAt: "2026-01-01T00:01:00Z",
+				},
+			});
+
+		const deployment = mechanizeDockerContainer(
+			createApplication({
+				modeSwarm: { Global: {} },
+				updateConfigSwarm: {
+					Parallelism: 1,
+					Delay: 60 * 1e9,
+					Order: "start-first",
+				},
+			}),
+		);
+		let settled = false;
+		deployment.finally(() => {
+			settled = true;
+		});
+
+		await vi.advanceTimersByTimeAsync(30 * 60 * 1000 + 55 * 1000);
+
+		expect(settled).toBe(false);
+		expect(listServicesMock).toHaveBeenCalledWith({
+			filters: { name: ["test-app"] },
+			status: true,
+			abortSignal: expect.any(AbortSignal),
+		});
+		inspectMock.mockResolvedValueOnce({
+			Version: { Index: "8" },
+			Spec: {
+				TaskTemplate: { ForceUpdate: 4 },
+				Mode: { Global: {} },
+			},
+			UpdateStatus: {
+				State: "completed",
+				StartedAt: "2026-01-01T00:01:00Z",
+			},
+		});
+		await vi.advanceTimersByTimeAsync(5000);
+		await expect(deployment).resolves.toBeUndefined();
+	});
+
+	it("aborts a Swarm status request that stops responding", async () => {
+		vi.useFakeTimers();
+		inspectMock
+			.mockResolvedValueOnce({
+				Version: { Index: "7" },
+				Spec: { TaskTemplate: { ForceUpdate: 3 } },
+			})
+			.mockImplementationOnce(
+				(options) =>
+					new Promise((_, reject) => {
+						options?.abortSignal?.addEventListener("abort", () => {
+							reject(new Error("status request aborted"));
+						});
+					}),
+			);
+
+		const deployment = mechanizeDockerContainer(createApplication());
+		const rejection = expect(deployment).rejects.toThrow(
+			"status request aborted",
+		);
+		await vi.advanceTimersByTimeAsync(30 * 1000);
+
+		await rejection;
+	});
+
+	it("times out updates that never reach a terminal Swarm state", async () => {
+		vi.useFakeTimers();
+		inspectMock
+			.mockResolvedValueOnce({
+				Version: { Index: "7" },
+				Spec: { TaskTemplate: { ForceUpdate: 3 } },
+				UpdateStatus: {
+					State: "completed",
+					StartedAt: "2026-01-01T00:00:00Z",
+				},
+			})
+			.mockResolvedValue({
+				Version: { Index: "8" },
+				Spec: { TaskTemplate: { ForceUpdate: 4 } },
+				UpdateStatus: {
+					State: "updating",
+					StartedAt: "2026-01-01T00:01:00Z",
+				},
+			});
+
+		const deployment = mechanizeDockerContainer(createApplication());
+		const rejection = expect(deployment).rejects.toThrow(
+			"Swarm service update timed out",
+		);
+		await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 5000);
+
+		await rejection;
 		expect(createServiceMock).not.toHaveBeenCalled();
 	});
 

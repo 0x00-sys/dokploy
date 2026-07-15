@@ -1,6 +1,6 @@
 import { findRegistryByIdWithCredentials } from "@dokploy/server/services/registry";
 import type { InferResultType } from "@dokploy/server/types/with";
-import type { CreateServiceOptions } from "dockerode";
+import type { CreateServiceOptions, Service } from "dockerode";
 import { getRegistryTag, uploadImageRemoteCommand } from "../cluster/upload";
 import {
 	calculateResources,
@@ -73,6 +73,144 @@ export const getBuildCommand = async (application: ApplicationNested) => {
 	}
 
 	return command;
+};
+
+const SERVICE_UPDATE_POLL_INTERVAL_MS = 5000;
+const SERVICE_UPDATE_TIMEOUT_BUFFER_MS = 10 * 60 * 1000;
+const SERVICE_INSPECT_TIMEOUT_MS = 30 * 1000;
+const FAILED_SERVICE_UPDATE_STATES = new Set([
+	"paused",
+	"rollback_started",
+	"rollback_paused",
+	"rollback_completed",
+]);
+const FAILED_SERVICE_ROLLBACK_STATES = new Set([
+	"rollback_started",
+	"rollback_paused",
+	"rollback_completed",
+]);
+
+const waitForServiceUpdate = async (
+	service: Service,
+	expectedForceUpdate: number,
+	timeoutMs: number,
+	previousStartedAt?: string,
+) => {
+	const deadline = Date.now() + timeoutMs;
+
+	while (Date.now() < deadline) {
+		const controller = new AbortController();
+		const inspectTimeout = setTimeout(
+			() => controller.abort(),
+			Math.min(SERVICE_INSPECT_TIMEOUT_MS, deadline - Date.now()),
+		);
+		let inspect: Awaited<ReturnType<typeof service.inspect>>;
+		try {
+			inspect = await service.inspect({ abortSignal: controller.signal });
+		} finally {
+			clearTimeout(inspectTimeout);
+		}
+
+		const status = inspect.UpdateStatus;
+		const hasCurrentStartedAt =
+			status?.StartedAt && status.StartedAt !== previousStartedAt;
+		const hasExpectedSpec =
+			inspect.Spec.TaskTemplate.ForceUpdate === expectedForceUpdate;
+
+		if (inspect.Spec.TaskTemplate.ForceUpdate > expectedForceUpdate) {
+			throw new Error("Swarm service update was superseded by a newer update");
+		}
+
+		if (
+			hasCurrentStartedAt &&
+			hasExpectedSpec &&
+			status.State === "completed"
+		) {
+			return;
+		}
+		if (
+			hasCurrentStartedAt &&
+			status.State &&
+			(FAILED_SERVICE_ROLLBACK_STATES.has(status.State) ||
+				(hasExpectedSpec && FAILED_SERVICE_UPDATE_STATES.has(status.State)))
+		) {
+			throw new Error(
+				`Swarm service update failed: ${status.Message || status.State.replaceAll("_", " ")}`,
+			);
+		}
+
+		await new Promise((resolve) =>
+			setTimeout(resolve, SERVICE_UPDATE_POLL_INTERVAL_MS),
+		);
+	}
+
+	throw new Error("Swarm service update timed out");
+};
+
+const getServiceUpdateTimeout = (
+	settings: CreateServiceOptions,
+	desiredTasks: number,
+) => {
+	const getRolloutDuration = (config: CreateServiceOptions["UpdateConfig"]) => {
+		if (!config) return 0;
+		const parallelism = Math.max(config.Parallelism || 1, 1);
+		const batches = Math.max(Math.ceil(desiredTasks / parallelism), 1);
+		const delay = Math.max(config.Delay || 0, 0);
+		const monitor = Math.max(config.Monitor || 0, 0);
+
+		return (batches * delay + Math.max(monitor, delay + 1e9)) / 1e6;
+	};
+
+	const updateDuration = getRolloutDuration(settings.UpdateConfig);
+	const rollbackDuration =
+		settings.UpdateConfig?.FailureAction === "rollback"
+			? getRolloutDuration(settings.RollbackConfig)
+			: 0;
+
+	return Math.max(
+		SERVICE_UPDATE_TIMEOUT_BUFFER_MS,
+		updateDuration + rollbackDuration + SERVICE_UPDATE_TIMEOUT_BUFFER_MS,
+	);
+};
+
+const getDesiredServiceTasks = async (
+	docker: Awaited<ReturnType<typeof getRemoteDocker>>,
+	appName: string,
+	settings: CreateServiceOptions,
+	previousMode: Awaited<ReturnType<Service["inspect"]>>["Spec"]["Mode"],
+	fallbackReplicas: number,
+) => {
+	const requestedReplicas = settings.Mode?.Replicated?.Replicas;
+	const previousReplicas = previousMode?.Replicated?.Replicas;
+	if (requestedReplicas !== undefined || previousReplicas !== undefined) {
+		return Math.max(
+			requestedReplicas ?? 0,
+			previousReplicas ?? 0,
+			fallbackReplicas,
+		);
+	}
+
+	const controller = new AbortController();
+	const timeout = setTimeout(
+		() => controller.abort(),
+		SERVICE_INSPECT_TIMEOUT_MS,
+	);
+	try {
+		const services = await docker.listServices({
+			filters: { name: [appName] },
+			status: true,
+			abortSignal: controller.signal,
+		});
+		const currentService = services.find(
+			(candidate) => candidate.Spec?.Name === appName,
+		);
+		return Math.max(
+			currentService?.ServiceStatus?.DesiredTasks ?? 0,
+			fallbackReplicas,
+		);
+	} finally {
+		clearTimeout(timeout);
+	}
 };
 
 export const mechanizeDockerContainer = async (
@@ -185,14 +323,30 @@ export const mechanizeDockerContainer = async (
 		return;
 	}
 
+	const expectedForceUpdate = inspect.Spec.TaskTemplate.ForceUpdate + 1;
 	await service.update({
 		version: Number.parseInt(inspect.Version.Index),
 		...settings,
 		TaskTemplate: {
 			...settings.TaskTemplate,
-			ForceUpdate: inspect.Spec.TaskTemplate.ForceUpdate + 1,
+			ForceUpdate: expectedForceUpdate,
 		},
 	});
+	await waitForServiceUpdate(
+		service,
+		expectedForceUpdate,
+		getServiceUpdateTimeout(
+			settings,
+			await getDesiredServiceTasks(
+				docker,
+				appName,
+				settings,
+				inspect.Spec.Mode,
+				application.replicas,
+			),
+		),
+		inspect.UpdateStatus?.StartedAt,
+	);
 };
 
 const isDockerNotFoundError = (error: unknown) =>
