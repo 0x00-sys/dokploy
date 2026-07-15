@@ -89,18 +89,27 @@ export const decryptValue = (value: string): string => {
 	const iv = payload.subarray(0, IV_LENGTH);
 	const authTag = payload.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
 	const encrypted = payload.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
-	const keys = [...decryptionKeys, ...loadRestoredKeys()];
-	for (const key of keys) {
-		try {
-			const decipher = createDecipheriv("aes-256-gcm", key, iv);
-			decipher.setAuthTag(authTag);
-			return Buffer.concat([
-				decipher.update(encrypted),
-				decipher.final(),
-			]).toString("utf8");
-		} catch {
-			// GCM auth failed for this key; try the next one.
+	const decryptWithKeys = (keys: Buffer[]) => {
+		for (const key of keys) {
+			try {
+				const decipher = createDecipheriv("aes-256-gcm", key, iv);
+				decipher.setAuthTag(authTag);
+				return Buffer.concat([
+					decipher.update(encrypted),
+					decipher.final(),
+				]).toString("utf8");
+			} catch {
+				// GCM auth failed for this key; try the next one.
+			}
 		}
+	};
+	const decrypted = decryptWithKeys(decryptionKeys);
+	if (decrypted !== undefined) {
+		return decrypted;
+	}
+	const restored = decryptWithKeys(loadRestoredKeys());
+	if (restored !== undefined) {
+		return restored;
 	}
 	throw new Error(
 		"Failed to decrypt a stored secret. This usually means ENCRYPTION_KEY or BETTER_AUTH_SECRET changed after the value was encrypted.",
