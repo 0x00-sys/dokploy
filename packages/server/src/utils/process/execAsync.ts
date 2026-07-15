@@ -162,7 +162,6 @@ export const execAsyncRemote = async (
 	return new Promise((resolve, reject) => {
 		const conn = new Client();
 
-		sleep(1000);
 		conn
 			.once("ready", () => {
 				conn.exec(command, (err, stream) => {

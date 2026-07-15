@@ -103,6 +103,24 @@ describe("execAsyncRemote", () => {
 		expect(sshMock.end).toHaveBeenCalledOnce();
 	});
 
+	it("does not leave an unused timer after a remote command fails to start", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] });
+		sshMock.exec.mockImplementationOnce(
+			(_command: string, callback: (error?: Error) => void) => {
+				callback(new Error("Unable to open command channel"));
+			},
+		);
+
+		try {
+			await expect(execAsyncRemote("server-1", "docker ps")).rejects.toThrow(
+				"Unable to open command channel",
+			);
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("bounds captured output while streaming the full remote command", async () => {
 		const output = "x".repeat(2 * 1024 * 1024);
 		const stream = createStream();
