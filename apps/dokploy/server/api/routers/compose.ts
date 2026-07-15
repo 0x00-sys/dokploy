@@ -305,7 +305,7 @@ export const composeRouter = createTRPCRouter({
 				deployment: ["cancel"],
 			});
 			const compose = await findComposeById(input.composeId);
-			await killDockerBuild("compose", compose.serverId);
+			await killDockerBuild("compose", compose.serverId, compose.appName);
 		}),
 
 	loadServices: protectedProcedure

@@ -67,6 +67,7 @@ it("kills application builds on the configured build server", async () => {
 	expect(mocks.killDockerBuild).toHaveBeenCalledWith(
 		"application",
 		"build-server",
+		"app-1",
 	);
 });
 
@@ -83,6 +84,7 @@ it("falls back to the runtime server when no build server is configured", async 
 	expect(mocks.killDockerBuild).toHaveBeenCalledWith(
 		"application",
 		"runtime-server",
+		"app-1",
 	);
 });
 
