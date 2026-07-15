@@ -25,6 +25,9 @@ interface Props {
 	runType: "swarm" | "native";
 }
 
+export const closeContainerLogSocket = (socket: Pick<WebSocket, "close">) =>
+	socket.close();
+
 export const priorities = [
 	{
 		label: "Info",
@@ -220,9 +223,7 @@ export const DockerLogsId: React.FC<Props> = ({
 		return () => {
 			isCurrentConnection = false;
 			if (noDataTimeout) clearTimeout(noDataTimeout);
-			if (ws.readyState === WebSocket.OPEN) {
-				ws.close();
-			}
+			closeContainerLogSocket(ws);
 		};
 	}, [containerId, serverId, lines, search, since]);
 
