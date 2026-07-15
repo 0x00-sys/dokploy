@@ -134,15 +134,18 @@ exit 1;
 export const addDomainToCompose = async (
 	compose: Compose,
 	domains: Domain[],
+	composeFile?: ComposeSpecification | null,
 ) => {
 	const { appName } = compose;
 
-	let result: ComposeSpecification | null;
+	let result: ComposeSpecification | null = composeFile ?? null;
 
-	if (compose.serverId) {
-		result = await loadDockerComposeRemote(compose);
-	} else {
-		result = await loadDockerCompose(compose);
+	if (composeFile === undefined) {
+		if (compose.serverId) {
+			result = await loadDockerComposeRemote(compose);
+		} else {
+			result = await loadDockerCompose(compose);
+		}
 	}
 
 	if (!result) {

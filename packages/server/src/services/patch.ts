@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import { paths } from "@dokploy/server/constants";
 import { db } from "@dokploy/server/db";
 import { type apiCreatePatch, patch } from "@dokploy/server/db/schema";
@@ -65,6 +65,19 @@ export const findPatchesByEntityId = async (
 		),
 		orderBy: (patch, { asc }) => [asc(patch.filePath)],
 	});
+};
+
+export const getEnabledPatchForFilePath = (
+	patches: Patch[],
+	filePath: string,
+) => {
+	for (let index = patches.length - 1; index >= 0; index--) {
+		const item = patches[index];
+		if (item?.enabled && normalize(item.filePath) === normalize(filePath)) {
+			return item;
+		}
+	}
+	return undefined;
 };
 
 export const findPatchByFilePath = async (

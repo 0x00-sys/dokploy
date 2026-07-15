@@ -1,5 +1,6 @@
 import {
 	addDomainToCompose,
+	type ComposeSpecification,
 	clearOldDeployments,
 	cloneCompose,
 	createCommand,
@@ -13,11 +14,13 @@ import {
 	findComposeById,
 	findDomainsByComposeId,
 	findEnvironmentById,
+	findPatchesByEntityId,
 	findProjectById,
 	findServerById,
 	getAccessibleServerIds,
 	getComposeContainer,
 	getContainerLogs,
+	getEnabledPatchForFilePath,
 	getWebServerSettings,
 	IS_CLOUD,
 	loadServices,
@@ -51,7 +54,7 @@ import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import _ from "lodash";
 import { nanoid } from "nanoid";
 import { parse } from "toml";
-import { stringify } from "yaml";
+import { parse as parseYaml, stringify } from "yaml";
 import { z } from "zod";
 import { slugify } from "@/lib/slug";
 import {
@@ -402,7 +405,31 @@ export const composeRouter = createTRPCRouter({
 			});
 			const compose = await findComposeById(input.composeId);
 			const domains = await findDomainsByComposeId(input.composeId);
-			const composeFile = await addDomainToCompose(compose, domains);
+			let patchedComposeFile: ComposeSpecification | null | undefined;
+			if (compose.sourceType !== "raw") {
+				const patches = await findPatchesByEntityId(input.composeId, "compose");
+				const composePatch = getEnabledPatchForFilePath(
+					patches,
+					compose.composePath,
+				);
+				if (composePatch?.type === "delete") {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"The Compose file is marked for deletion by an enabled patch",
+					});
+				}
+				if (composePatch) {
+					patchedComposeFile = parseYaml(composePatch.content, {
+						maxAliasCount: 10000,
+					});
+				}
+			}
+			const composeFile = await addDomainToCompose(
+				compose,
+				domains,
+				patchedComposeFile,
+			);
 			return stringify(composeFile, {
 				lineWidth: 1000,
 			});
