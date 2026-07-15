@@ -9,6 +9,7 @@ import {
 	prepareEnvironmentVariables,
 } from "../docker/utils";
 import { getRemoteDocker } from "../servers/remote-docker";
+import { updateOrCreateService } from "./service";
 
 export type MariadbNested = InferResultType<
 	"mariadb",
@@ -117,18 +118,18 @@ export const buildMariadb = async (mariadb: MariadbNested) => {
 			FailureAction: "rollback" as const,
 		},
 	};
-	try {
-		const service = docker.getService(appName);
-		const inspect = await service.inspect();
-		await service.update({
-			version: Number.parseInt(inspect.Version.Index),
-			...settings,
-			TaskTemplate: {
-				...settings.TaskTemplate,
-				ForceUpdate: inspect.Spec.TaskTemplate.ForceUpdate + 1,
-			},
-		});
-	} catch {
-		await docker.createService(settings);
-	}
+	const service = docker.getService(appName);
+	await updateOrCreateService(
+		service,
+		() => docker.createService(settings),
+		(inspect) =>
+			service.update({
+				version: Number.parseInt(inspect.Version.Index),
+				...settings,
+				TaskTemplate: {
+					...settings.TaskTemplate,
+					ForceUpdate: inspect.Spec.TaskTemplate.ForceUpdate + 1,
+				},
+			}),
+	);
 };
