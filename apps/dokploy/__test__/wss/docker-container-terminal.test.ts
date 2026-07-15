@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
 	const wssHandlers = new Map<string, (...args: any[]) => unknown>();
+	const findServerById = vi.fn();
 	const stderr = {
 		on: vi.fn(),
 	};
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => {
 	};
 	return {
 		client,
+		findServerById,
 		stderr,
 		stream,
 		wssHandlers,
@@ -46,16 +48,7 @@ vi.mock("ssh2", () => ({
 
 vi.mock("node-pty", () => ({ spawn: vi.fn() }));
 vi.mock("@dokploy/server", () => ({
-	findServerById: vi.fn(() =>
-		Promise.resolve({
-			organizationId: "org-1",
-			sshKeyId: "key-1",
-			sshKey: { privateKey: "private" },
-			ipAddress: "127.0.0.1",
-			port: 22,
-			username: "root",
-		}),
-	),
+	findServerById: mocks.findServerById,
 	IS_CLOUD: false,
 	validateRequest: vi.fn(() =>
 		Promise.resolve({
@@ -70,6 +63,14 @@ import { setupDockerContainerTerminalWebSocketServer } from "@/server/wss/docker
 beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.wssHandlers.clear();
+	mocks.findServerById.mockResolvedValue({
+		organizationId: "org-1",
+		sshKeyId: "key-1",
+		sshKey: { privateKey: "private" },
+		ipAddress: "127.0.0.1",
+		port: 22,
+		username: "root",
+	});
 	mocks.client.once.mockReturnValue(mocks.client);
 	mocks.client.on.mockReturnValue(mocks.client);
 	mocks.client.exec.mockImplementation((_command, _options, callback) => {
@@ -129,4 +130,28 @@ it("forwards each remote stdout chunk without making a retained copy", async () 
 
 	expect(chunk.toString).toHaveBeenCalledOnce();
 	expect(ws.send).toHaveBeenCalledWith("terminal output");
+});
+
+it("closes the socket when remote terminal setup fails", async () => {
+	mocks.findServerById.mockResolvedValueOnce({
+		organizationId: "org-1",
+		sshKeyId: null,
+	});
+	setupDockerContainerTerminalWebSocketServer({ on: vi.fn() } as never);
+	const ws = {
+		on: vi.fn(),
+		once: vi.fn(),
+		send: vi.fn(),
+		close: vi.fn(),
+		readyState: 1,
+		OPEN: 1,
+	};
+
+	await mocks.wssHandlers.get("connection")?.(ws, {
+		url: "/docker-container-terminal?containerId=abc123&serverId=server-1",
+		headers: { host: "localhost" },
+	});
+
+	expect(ws.send).toHaveBeenCalledWith("No SSH key available for this server");
+	expect(ws.close).toHaveBeenCalledOnce();
 });

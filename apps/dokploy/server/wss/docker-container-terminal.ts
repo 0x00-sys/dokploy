@@ -178,7 +178,10 @@ export const setupDockerContainerTerminalWebSocketServer = (
 			// @ts-ignore
 			const errorMessage = error?.message as unknown as string;
 
-			ws.send(errorMessage);
+			if (ws.readyState === ws.OPEN) {
+				ws.send(errorMessage);
+				ws.close();
+			}
 		}
 	});
 };
