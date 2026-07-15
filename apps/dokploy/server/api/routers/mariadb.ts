@@ -244,9 +244,11 @@ export const mariadbRouter = createTRPCRouter({
 			});
 
 			return observable<string>((emit) => {
-				deployMariadb(input.mariadbId, (log) => {
+				void deployMariadb(input.mariadbId, (log) => {
 					emit.next(log);
-				});
+				})
+					.catch(() => {})
+					.finally(() => emit.complete());
 			});
 		}),
 	changeStatus: protectedProcedure
