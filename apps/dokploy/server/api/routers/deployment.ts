@@ -191,8 +191,9 @@ export const deploymentRouter = createTRPCRouter({
 			}
 
 			const command = `kill -9 ${deployment.pid}`;
-			if (deployment.schedule?.serverId) {
-				await execAsyncRemote(deployment.schedule.serverId, command);
+			const serverId = deployment.serverId || deployment.schedule?.serverId;
+			if (serverId) {
+				await execAsyncRemote(serverId, command);
 			} else {
 				await execAsync(command);
 			}
