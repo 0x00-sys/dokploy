@@ -5,6 +5,16 @@ import {
 } from "node:child_process";
 import BufferList from "bl";
 
+const MAX_CAPTURED_OUTPUT_BYTES = 1024 * 1024;
+
+const appendCapturedOutput = (output: BufferList, data: Buffer) => {
+	output.append(data);
+	const excessBytes = output.length - MAX_CAPTURED_OUTPUT_BYTES;
+	if (excessBytes > 0) {
+		output.consume(excessBytes);
+	}
+};
+
 export const spawnAsync = (
 	command: string,
 	args?: string[] | undefined,
@@ -16,16 +26,16 @@ export const spawnAsync = (
 	const stderr = child.stderr ? new BufferList() : new BufferList();
 
 	if (child.stdout) {
-		child.stdout.on("data", (data) => {
-			stdout.append(data);
+		child.stdout.on("data", (data: Buffer) => {
+			appendCapturedOutput(stdout, data);
 			if (onData) {
 				onData(data.toString());
 			}
 		});
 	}
 	if (child.stderr) {
-		child.stderr.on("data", (data) => {
-			stderr.append(data);
+		child.stderr.on("data", (data: Buffer) => {
+			appendCapturedOutput(stderr, data);
 			if (onData) {
 				onData(data.toString());
 			}
