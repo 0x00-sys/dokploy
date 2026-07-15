@@ -247,7 +247,10 @@ export const applicationRouter = createTRPCRouter({
 				async () => await deleteAllMiddlewares(application),
 				async () => await removeDeployments(application),
 				async () =>
-					await removeDirectoryCode(application.appName, application.serverId),
+					await removeDirectoryCode(
+						application.appName,
+						application.buildServerId || application.serverId,
+					),
 				async () =>
 					await removeMonitoringDirectory(
 						application.appName,

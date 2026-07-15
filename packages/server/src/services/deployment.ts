@@ -662,10 +662,11 @@ const getDeploymentsByType = async (
 
 export const removeDeployments = async (application: Application) => {
 	const { appName, applicationId } = application;
-	const { LOGS_PATH } = paths(!!application.serverId);
+	const serverId = application.buildServerId || application.serverId;
+	const { LOGS_PATH } = paths(!!serverId);
 	const logsPath = path.join(LOGS_PATH, appName);
-	if (application.serverId) {
-		await execAsyncRemote(application.serverId, `rm -rf ${logsPath}`);
+	if (serverId) {
+		await execAsyncRemote(serverId, `rm -rf ${logsPath}`);
 	} else {
 		await removeDirectoryIfExistsContent(logsPath);
 	}
