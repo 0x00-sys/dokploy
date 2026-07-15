@@ -226,7 +226,13 @@ export const deploymentRouter = createTRPCRouter({
 					});
 				}
 			}
-			const result = await removeDeployment(input.deploymentId);
+			const serverId =
+				deployment.buildServerId ||
+				deployment.serverId ||
+				deployment.schedule?.serverId ||
+				deployment.application?.serverId ||
+				deployment.compose?.serverId;
+			const result = await removeDeployment(input.deploymentId, serverId);
 			await audit(ctx, {
 				action: "delete",
 				resourceType: "deployment",
