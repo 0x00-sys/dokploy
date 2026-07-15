@@ -28,6 +28,10 @@ const mocks = vi.hoisted(() => {
 		updateDeployment: vi.fn(),
 		updateDeploymentStatus: vi.fn(),
 		getServiceContainer: vi.fn(() => Promise.resolve({ Id: "container-1" })),
+		execAsyncRemote: vi.fn(
+			(_serverId: string, _command: string, _onData?: (data: string) => void) =>
+				Promise.resolve(),
+		),
 		spawnAsync: vi.fn(() => Promise.resolve()),
 	};
 });
@@ -62,7 +66,7 @@ vi.mock("@dokploy/server/utils/docker/utils", () => ({
 }));
 
 vi.mock("@dokploy/server/utils/process/execAsync", () => ({
-	execAsyncRemote: vi.fn(),
+	execAsyncRemote: mocks.execAsyncRemote,
 }));
 
 vi.mock("@dokploy/server/utils/process/spawnAsync", () => ({
@@ -71,7 +75,7 @@ vi.mock("@dokploy/server/utils/process/spawnAsync", () => ({
 
 import { runCommand } from "@dokploy/server/utils/schedules/utils";
 
-describe("runCommand log streams", () => {
+describe("runCommand", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mocks.streams.length = 0;
@@ -114,5 +118,18 @@ describe("runCommand log streams", () => {
 
 		expect(mocks.streams).toHaveLength(1);
 		expect(mocks.streams[0]?.end).toHaveBeenCalledOnce();
+	});
+
+	it("preserves a remote script failure when piping output through tee", async () => {
+		mocks.findScheduleById.mockResolvedValue({
+			appName: "script",
+			scheduleType: "server",
+			serverId: "server-1",
+		});
+
+		await runCommand("schedule-1");
+
+		const command = mocks.execAsyncRemote.mock.calls[0]?.[1];
+		expect(command).toContain("bash -o pipefail -c");
 	});
 });
