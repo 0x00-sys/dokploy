@@ -55,7 +55,10 @@ export const setupDockerStatsMonitoringSocketServer = (
 			ws.close();
 			return;
 		}
+		let isPolling = false;
 		const intervalId = setInterval(async () => {
+			if (isPolling) return;
+			isPolling = true;
 			try {
 				// Special case: when monitoring "dokploy", get host system stats instead of container stats
 				if (appName === "dokploy") {
@@ -114,6 +117,8 @@ export const setupDockerStatsMonitoringSocketServer = (
 			} catch (error) {
 				// @ts-ignore
 				ws.close(4000, `Error: ${error.message}`);
+			} finally {
+				isPolling = false;
 			}
 		}, 1300);
 
