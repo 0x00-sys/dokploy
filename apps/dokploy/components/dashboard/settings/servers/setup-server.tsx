@@ -72,6 +72,9 @@ export const SetupServer = ({ serverId, asButton = false }: Props) => {
 				const parsedLogs = parseLogs(log);
 				setFilteredLogs((prev) => [...prev, ...parsedLogs]);
 			},
+			onComplete() {
+				setIsDeploying(false);
+			},
 			onError(error) {
 				console.error("Deployment logs error:", error);
 				setIsDeploying(false);
