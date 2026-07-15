@@ -50,7 +50,7 @@ export const DockerTerminal: React.FC<Props> = ({
 		term.loadAddon(addonAttach);
 		addonFit.fit();
 		return () => {
-			ws.readyState === WebSocket.OPEN && ws.close();
+			ws.close();
 		};
 	}, [containerId, activeWay, id]);
 
