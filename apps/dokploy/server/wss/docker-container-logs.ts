@@ -35,6 +35,10 @@ export const setupDockerContainerLogsWebSocketServer = (
 	// eslint-disable-next-line @typescript-eslint/no-misused-promises
 	wssTerm.on("connection", async (ws, req) => {
 		const url = new URL(req.url || "", `http://${req.headers.host}`);
+		let isClosed = false;
+		ws.once("close", () => {
+			isClosed = true;
+		});
 		const containerId = url.searchParams.get("containerId");
 		const tail = url.searchParams.get("tail") ?? "100";
 		const search = url.searchParams.get("search") ?? "";
@@ -42,6 +46,7 @@ export const setupDockerContainerLogsWebSocketServer = (
 		const serverId = url.searchParams.get("serverId");
 		const runType = url.searchParams.get("runType");
 		const { user, session } = await validateRequest(req);
+		if (isClosed) return;
 
 		if (!containerId) {
 			ws.close(4000, "containerId no provided");
@@ -85,6 +90,7 @@ export const setupDockerContainerLogsWebSocketServer = (
 		try {
 			if (serverId) {
 				const server = await findServerById(serverId);
+				if (isClosed) return;
 
 				if (server.organizationId !== session.activeOrganizationId) {
 					ws.close();
