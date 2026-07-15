@@ -99,7 +99,7 @@ export const setupDockerStatsMonitoringSocketServer = (
 						label: [`com.docker.stack.namespace=${appName}`],
 					}),
 					...(appType === "docker-compose" && {
-						name: [appName],
+						label: [`com.docker.compose.project=${appName}`],
 					}),
 				};
 
@@ -112,7 +112,7 @@ export const setupDockerStatsMonitoringSocketServer = (
 							? `label=com.docker.swarm.service.name=${appName}`
 							: appType === "stack"
 								? `label=com.docker.stack.namespace=${appName}`
-								: `name=${appName}`;
+								: `label=com.docker.compose.project=${appName}`;
 					const result = await execAsyncRemote(
 						serverId,
 						`container_id=$(docker ps -q --filter "${remoteFilter}" | head -1); if [ -n "$container_id" ]; then docker stats "$container_id" --no-stream --format ${statsFormat}; fi`,
