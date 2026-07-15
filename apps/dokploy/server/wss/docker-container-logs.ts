@@ -81,6 +81,7 @@ export const setupDockerContainerLogsWebSocketServer = (
 				ws.ping();
 			}
 		}, 45000); // 45 seconds
+		ws.once("close", () => clearInterval(pingInterval));
 		try {
 			if (serverId) {
 				const server = await findServerById(serverId);
@@ -90,7 +91,10 @@ export const setupDockerContainerLogsWebSocketServer = (
 					return;
 				}
 
-				if (!server.sshKeyId) return;
+				if (!server.sshKeyId) {
+					ws.close(4000, "No SSH key available for this server");
+					return;
+				}
 				const client = new Client();
 				client
 					.once("ready", () => {
@@ -193,7 +197,10 @@ export const setupDockerContainerLogsWebSocketServer = (
 			// @ts-ignore
 			const errorMessage = error?.message as unknown as string;
 
-			ws.send(errorMessage);
+			if (ws.readyState === ws.OPEN) {
+				ws.send(errorMessage);
+			}
+			ws.close();
 		}
 	});
 };
