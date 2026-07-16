@@ -9,6 +9,7 @@ import {
 	RefreshCw,
 	RotateCcw,
 } from "lucide-react";
+import { nanoid } from "nanoid";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -61,7 +62,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { api } from "@/utils/api";
+import { api, type RouterInputs } from "@/utils/api";
 import type { ServiceType } from "../../application/advanced/show-resources";
 import { type LogLine, parseLogs } from "../../docker/logs/utils";
 
@@ -252,19 +253,23 @@ export const RestoreBackup = ({
 	const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 	const [filteredLogs, setFilteredLogs] = useState<LogLine[]>([]);
 	const [isDeploying, setIsDeploying] = useState(false);
+	const [restoreRequest, setRestoreRequest] = useState<
+		RouterInputs["backup"]["restoreBackupWithLogs"] | null
+	>(null);
 
 	api.backup.restoreBackupWithLogs.useSubscription(
-		{
+		restoreRequest ?? {
+			operationId: "disabled-restore-operation",
 			databaseId: id,
 			databaseType: currentDatabaseType as DatabaseType,
 			databaseName: form.watch("databaseName"),
 			backupFile: form.watch("backupFile"),
 			destinationId: form.watch("destinationId"),
-			backupType: backupType,
-			metadata: metadata,
+			backupType,
+			metadata,
 		},
 		{
-			enabled: isDeploying,
+			enabled: isDeploying && restoreRequest !== null,
 			onData(log) {
 				if (!isDrawerOpen) {
 					setIsDrawerOpen(true);
@@ -281,16 +286,28 @@ export const RestoreBackup = ({
 			},
 			onError(error) {
 				console.error("Restore logs error:", error);
+				toast.error(error.message);
 				setIsDeploying(false);
 			},
 		},
 	);
 
 	const onSubmit = async (data: z.infer<typeof RestoreBackupSchema>) => {
-		if (backupType === "compose" && !data.databaseType) {
+		const submittedDatabaseType = data.databaseType ?? databaseType;
+		if (!submittedDatabaseType) {
 			toast.error("Please select a database type");
 			return;
 		}
+		setRestoreRequest({
+			operationId: nanoid(),
+			databaseId: id,
+			databaseType: submittedDatabaseType,
+			databaseName: data.databaseName,
+			backupFile: data.backupFile,
+			destinationId: data.destinationId,
+			backupType,
+			metadata: data.metadata,
+		});
 		setIsDeploying(true);
 	};
 

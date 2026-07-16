@@ -28,6 +28,30 @@ beforeEach(() => {
 	mocks.restoreWebServerBackup.mockResolvedValue(undefined);
 });
 
+it("rejects oversized restore operation IDs", async () => {
+	const caller = backupRouter.createCaller({
+		req: {} as never,
+		res: {} as never,
+		db: null as never,
+		session: { activeOrganizationId: "org-1" } as never,
+		user: { id: "user-1", role: "owner" } as never,
+	});
+
+	await expect(
+		caller.restoreBackupWithLogs({
+			operationId: "a".repeat(65),
+			databaseId: "",
+			databaseType: "web-server",
+			backupType: "database",
+			databaseName: "dokploy",
+			backupFile: "webserver-backup.zip",
+			destinationId: "destination-1",
+			metadata: {},
+		}),
+	).rejects.toMatchObject({ code: "BAD_REQUEST" });
+	expect(mocks.findDestinationById).not.toHaveBeenCalled();
+});
+
 it("rejects members before starting a web-server restore", async () => {
 	const caller = backupRouter.createCaller({
 		req: {} as never,
@@ -38,6 +62,7 @@ it("rejects members before starting a web-server restore", async () => {
 	});
 
 	const subscription = await caller.restoreBackupWithLogs({
+		operationId: "00000000-0000-4000-8000-000000000011",
 		databaseId: "",
 		databaseType: "web-server",
 		backupType: "database",
@@ -65,6 +90,7 @@ it("still allows owners to start a web-server restore", async () => {
 	});
 
 	const subscription = await caller.restoreBackupWithLogs({
+		operationId: "00000000-0000-4000-8000-000000000012",
 		databaseId: "",
 		databaseType: "web-server",
 		backupType: "database",
@@ -95,6 +121,7 @@ it("rejects restore destinations from another organization", async () => {
 	});
 
 	const subscription = await caller.restoreBackupWithLogs({
+		operationId: "00000000-0000-4000-8000-000000000013",
 		databaseId: "",
 		databaseType: "web-server",
 		backupType: "database",
