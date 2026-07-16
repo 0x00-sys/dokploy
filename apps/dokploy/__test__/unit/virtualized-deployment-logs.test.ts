@@ -6,6 +6,7 @@ import {
 	VirtualizedDeploymentLogs,
 } from "@/components/dashboard/application/deployments/virtualized-deployment-logs";
 import type { LogLine } from "@/components/dashboard/docker/logs/utils";
+import { DrawerLogRows } from "@/components/shared/drawer-logs";
 
 describe("VirtualizedDeploymentLogs", () => {
 	it("renders only the visible rows from a large deployment log", () => {
@@ -28,6 +29,28 @@ describe("VirtualizedDeploymentLogs", () => {
 		expect(renderedRows).toBeLessThan(100);
 		expect(html).toContain("log-line-0");
 		expect(html).not.toContain("log-line-1000");
+	});
+
+	it("virtualizes large backup logs in the shared drawer", () => {
+		const logs: LogLine[] = Array.from({ length: 40_000 }, (_, index) => ({
+			message: `backup-log-line-${index}`,
+			rawTimestamp: null,
+			timestamp: null,
+		}));
+
+		const html = renderToStaticMarkup(
+			createElement(DrawerLogRows, {
+				autoScroll: false,
+				logs,
+				scrollRef: createRef<HTMLDivElement>(),
+			}),
+		);
+		const renderedRows = html.match(/data-index=/g)?.length ?? 0;
+
+		expect(renderedRows).toBeGreaterThan(0);
+		expect(renderedRows).toBeLessThan(100);
+		expect(html).toContain("backup-log-line-0");
+		expect(html).not.toContain("backup-log-line-1000");
 	});
 
 	it("follows the physical scroll bottom when auto-scroll is enabled", () => {

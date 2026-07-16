@@ -1,5 +1,6 @@
 import { Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
+import { useRef, useState } from "react";
 import {
 	Sheet,
 	SheetContent,
@@ -7,7 +8,7 @@ import {
 	SheetHeader,
 	SheetTitle,
 } from "@/components/ui/sheet";
-import { TerminalLine } from "../dashboard/docker/logs/terminal-line";
+import { VirtualizedDeploymentLogs } from "../dashboard/application/deployments/virtualized-deployment-logs";
 import type { LogLine } from "../dashboard/docker/logs/utils";
 
 interface Props {
@@ -16,14 +17,27 @@ interface Props {
 	filteredLogs: LogLine[];
 }
 
+interface DrawerLogRowsProps {
+	logs: LogLine[];
+	scrollRef: RefObject<HTMLDivElement | null>;
+	autoScroll: boolean;
+}
+
+export const DrawerLogRows = ({
+	logs,
+	scrollRef,
+	autoScroll,
+}: DrawerLogRowsProps) => (
+	<VirtualizedDeploymentLogs
+		logs={logs}
+		scrollRef={scrollRef}
+		autoScroll={autoScroll}
+	/>
+);
+
 export const DrawerLogs = ({ isOpen, onClose, filteredLogs }: Props) => {
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [autoScroll, setAutoScroll] = useState(true);
-	const scrollToBottom = () => {
-		if (autoScroll && scrollRef.current) {
-			scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-		}
-	};
 
 	const handleScroll = () => {
 		if (!scrollRef.current) return;
@@ -33,13 +47,6 @@ export const DrawerLogs = ({ isOpen, onClose, filteredLogs }: Props) => {
 		setAutoScroll(isAtBottom);
 	};
 
-	useEffect(() => {
-		scrollToBottom();
-
-		if (autoScroll && scrollRef.current) {
-			scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-		}
-	}, [filteredLogs, autoScroll]);
 	return (
 		<Sheet
 			open={!!isOpen}
@@ -59,13 +66,11 @@ export const DrawerLogs = ({ isOpen, onClose, filteredLogs }: Props) => {
 				>
 					{" "}
 					{filteredLogs.length > 0 ? (
-						filteredLogs.map((log: LogLine, index: number) => (
-							<TerminalLine
-								key={`${log.rawTimestamp ?? ""}-${index}`}
-								log={log}
-								noTimestamp
-							/>
-						))
+						<DrawerLogRows
+							logs={filteredLogs}
+							scrollRef={scrollRef}
+							autoScroll={autoScroll}
+						/>
 					) : (
 						<div className="flex justify-center items-center h-full text-muted-foreground">
 							<Loader2 className="h-6 w-6 animate-spin" />
