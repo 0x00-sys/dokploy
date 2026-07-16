@@ -263,6 +263,20 @@ export const mechanizeDockerContainer = async (
 	const image = await getImageName(application);
 	const authConfig = await getAuthConfig(application);
 	const docker = await getRemoteDocker(application.serverId);
+	const isNodeLocalImage =
+		application.sourceType !== "docker" &&
+		!application.registry &&
+		!application.buildRegistry;
+
+	if (isNodeLocalImage && !application.placementSwarm) {
+		const nodeId = (await docker.info()).Swarm?.NodeID;
+		if (nodeId) {
+			Placement.Constraints = [
+				...(Placement.Constraints ?? []),
+				`node.id==${nodeId}`,
+			];
+		}
+	}
 
 	const settings: CreateServiceOptions = {
 		authconfig: authConfig,

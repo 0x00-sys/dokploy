@@ -8,6 +8,7 @@ type MockCreateServiceOptions = {
 			StopGracePeriod?: number;
 			Ulimits?: Array<{ Name: string; Soft: number; Hard: number }>;
 		};
+		Placement?: { Constraints?: string[] };
 	};
 	[key: string]: unknown;
 };
@@ -46,6 +47,7 @@ const {
 	createServiceMock,
 	listServicesMock,
 	getRemoteDockerMock,
+	infoMock,
 } = vi.hoisted(() => {
 	const inspect =
 		vi.fn<
@@ -61,10 +63,12 @@ const {
 	const listServices = vi.fn<
 		(options?: unknown) => Promise<MockListedService[]>
 	>(async () => []);
+	const info = vi.fn(async () => ({ Swarm: { NodeID: "node-123" } }));
 	const getRemoteDocker = vi.fn(async () => ({
 		getService,
 		createService,
 		listServices,
+		info,
 	}));
 	return {
 		inspectMock: inspect,
@@ -73,6 +77,7 @@ const {
 		createServiceMock: createService,
 		listServicesMock: listServices,
 		getRemoteDockerMock: getRemoteDocker,
+		infoMock: info,
 	};
 });
 
@@ -121,10 +126,13 @@ describe("mechanizeDockerContainer", () => {
 		createServiceMock.mockClear();
 		listServicesMock.mockClear();
 		getRemoteDockerMock.mockClear();
+		infoMock.mockClear();
+		infoMock.mockResolvedValue({ Swarm: { NodeID: "node-123" } });
 		getRemoteDockerMock.mockResolvedValue({
 			getService: getServiceMock,
 			createService: createServiceMock,
 			listServices: listServicesMock,
+			info: infoMock,
 		});
 	});
 
@@ -546,5 +554,80 @@ describe("mechanizeDockerContainer", () => {
 		}
 		const [settings] = call;
 		expect(settings.TaskTemplate?.ContainerSpec).not.toHaveProperty("Ulimits");
+	});
+
+	it("pins a locally built image to the node that built it", async () => {
+		await mechanizeDockerContainer(
+			createApplication({
+				sourceType: "github",
+				dockerImage: null,
+				registry: null,
+				buildRegistry: null,
+				rollbackRegistry: null,
+				placementSwarm: null,
+			}),
+		);
+
+		const call = createServiceMock.mock.calls[0];
+		if (!call) {
+			throw new Error("createServiceMock should have been called once");
+		}
+		const [settings] = call;
+		expect(settings.TaskTemplate?.Placement?.Constraints).toContain(
+			"node.id==node-123",
+		);
+	});
+
+	it("still pins the current image when a rollback registry is configured", async () => {
+		await mechanizeDockerContainer(
+			createApplication({
+				sourceType: "github",
+				dockerImage: null,
+				rollbackRegistry: {} as ApplicationNested["rollbackRegistry"],
+			}),
+		);
+
+		const call = createServiceMock.mock.calls[0];
+		if (!call) {
+			throw new Error("createServiceMock should have been called once");
+		}
+		const [settings] = call;
+		expect(settings.TaskTemplate?.Placement?.Constraints).toContain(
+			"node.id==node-123",
+		);
+	});
+
+	it("does not pin externally pulled Docker images", async () => {
+		await mechanizeDockerContainer(createApplication());
+
+		expect(infoMock).not.toHaveBeenCalled();
+		const call = createServiceMock.mock.calls[0];
+		if (!call) {
+			throw new Error("createServiceMock should have been called once");
+		}
+		const [settings] = call;
+		expect(settings.TaskTemplate?.Placement?.Constraints ?? []).not.toContain(
+			"node.id==node-123",
+		);
+	});
+
+	it("keeps user-defined placement for locally built images", async () => {
+		await mechanizeDockerContainer(
+			createApplication({
+				sourceType: "github",
+				dockerImage: null,
+				placementSwarm: { Constraints: ["node.labels.zone==eu"] },
+			}),
+		);
+
+		expect(infoMock).not.toHaveBeenCalled();
+		const call = createServiceMock.mock.calls[0];
+		if (!call) {
+			throw new Error("createServiceMock should have been called once");
+		}
+		const [settings] = call;
+		expect(settings.TaskTemplate?.Placement?.Constraints).toEqual([
+			"node.labels.zone==eu",
+		]);
 	});
 });
