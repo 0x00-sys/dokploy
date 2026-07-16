@@ -14,6 +14,7 @@ import {
 	extractBranchName,
 	extractCommitMessage,
 	extractCommittedPaths,
+	extractGithubTagName,
 	extractHash,
 	getProviderByHeader,
 	logWebhookError,
@@ -52,29 +53,44 @@ export default async function handler(
 			return;
 		}
 
-		const deploymentTitle = extractCommitMessage(req.headers, req.body);
+		let deploymentTitle = extractCommitMessage(req.headers, req.body);
 		const deploymentHash = extractHash(req.headers, req.body);
 		const sourceType = composeResult.sourceType;
 
 		if (sourceType === "github") {
-			const branchName = extractBranchName(req.headers, req.body);
-			const normalizedCommits = normalizeChangedFilesFromCommits(
-				req.body?.commits,
-			);
+			const tagName = extractGithubTagName(req.headers, req.body);
 
-			const shouldDeployPaths = shouldDeploy(
-				composeResult.watchPaths,
-				normalizedCommits,
-			);
+			if (composeResult.triggerType === "tag") {
+				if (!tagName || req.body?.deleted === true) {
+					res.status(301).json({ message: "Trigger Type Not Match" });
+					return;
+				}
+				deploymentTitle = `Tag created: ${tagName}`;
+			} else {
+				if (tagName) {
+					res.status(301).json({ message: "Trigger Type Not Match" });
+					return;
+				}
 
-			if (!shouldDeployPaths) {
-				res.status(301).json({ message: "Watch Paths Not Match" });
-				return;
-			}
+				const branchName = extractBranchName(req.headers, req.body);
+				const normalizedCommits = normalizeChangedFilesFromCommits(
+					req.body?.commits,
+				);
 
-			if (!branchName || branchName !== composeResult.branch) {
-				res.status(301).json({ message: "Branch Not Match" });
-				return;
+				const shouldDeployPaths = shouldDeploy(
+					composeResult.watchPaths,
+					normalizedCommits,
+				);
+
+				if (!shouldDeployPaths) {
+					res.status(301).json({ message: "Watch Paths Not Match" });
+					return;
+				}
+
+				if (!branchName || branchName !== composeResult.branch) {
+					res.status(301).json({ message: "Branch Not Match" });
+					return;
+				}
 			}
 		} else if (sourceType === "gitlab") {
 			const branchName = extractBranchName(req.headers, req.body);

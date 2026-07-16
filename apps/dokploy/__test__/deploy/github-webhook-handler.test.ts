@@ -159,9 +159,7 @@ const createPushRequest = (
 	}) as unknown as NextApiRequest;
 
 const createTagRequest = (tagName: string) => {
-	const req = createPushRequest("main") as unknown as {
-		body: { ref: string; head_commit: { message: string } };
-	};
+	const req = createPushRequest("main");
 
 	req.body.ref = `refs/tags/${tagName}`;
 	req.body.head_commit.message = `release: ${tagName}`;
@@ -376,6 +374,21 @@ describe("GitHub app webhook auto-deploy", () => {
 		expect(res.json).toHaveBeenCalledWith({
 			message: "Deployed 1 apps based on tag v1.0.0",
 		});
+	});
+
+	it("does not deploy deleted tags", async () => {
+		const req = createTagRequest("v1.0.0");
+		req.body.deleted = true;
+		req.body.head_commit = null;
+		const res = createResponse();
+
+		await handler(req, res);
+
+		expect(mocks.applicationsFindMany).not.toHaveBeenCalled();
+		expect(mocks.composeFindMany).not.toHaveBeenCalled();
+		expect(mocks.queueAdd).not.toHaveBeenCalled();
+		expect(res.status).toHaveBeenCalledWith(200);
+		expect(res.json).toHaveBeenCalledWith({ message: "Tag deletion ignored" });
 	});
 
 	it("does not deploy when the pushed branch does not match", async () => {

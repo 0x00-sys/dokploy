@@ -21,6 +21,7 @@ import { deploy } from "@/server/utils/deploy";
 import { canQueuePreviewDeployment } from "@/server/utils/preview-limit";
 import {
 	extractCommitMessage,
+	extractGithubTagName,
 	extractHash,
 	logWebhookError,
 } from "./[refreshToken]";
@@ -107,12 +108,14 @@ export default async function handler(
 	}
 
 	// Handle tag creation event
-	if (
-		req.headers["x-github-event"] === "push" &&
-		githubBody?.ref?.startsWith("refs/tags/")
-	) {
+	const tagName = extractGithubTagName(req.headers, githubBody);
+	if (tagName && githubBody?.deleted === true) {
+		res.status(200).json({ message: "Tag deletion ignored" });
+		return;
+	}
+
+	if (tagName) {
 		try {
-			const tagName = githubBody?.ref.replace("refs/tags/", "");
 			const repository = githubBody?.repository?.name;
 			const owner = getGithubRepositoryOwner(githubBody);
 			const deploymentTitle = `Tag created: ${tagName}`;
