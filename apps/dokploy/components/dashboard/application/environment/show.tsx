@@ -54,6 +54,7 @@ export const ShowEnvironment = ({ applicationId }: Props) => {
 		},
 		resolver: zodResolver(addEnvironmentSchema),
 	});
+	const { isDirty } = form.formState;
 
 	// Watch form values
 	const currentEnv = form.watch("env");
@@ -67,7 +68,7 @@ export const ShowEnvironment = ({ applicationId }: Props) => {
 		currentCreateEnvFile !== (data?.createEnvFile ?? true);
 
 	useEffect(() => {
-		if (data) {
+		if (data && !isDirty) {
 			form.reset({
 				env: data.env || "",
 				buildArgs: data.buildArgs || "",
@@ -75,7 +76,7 @@ export const ShowEnvironment = ({ applicationId }: Props) => {
 				createEnvFile: data.createEnvFile ?? true,
 			});
 		}
-	}, [data, form]);
+	}, [data, form, isDirty]);
 
 	const onSubmit = async (formData: EnvironmentSchema) => {
 		mutateAsync({
@@ -88,6 +89,7 @@ export const ShowEnvironment = ({ applicationId }: Props) => {
 			.then(async () => {
 				toast.success("Environments Added");
 				await refetch();
+				form.reset(formData);
 			})
 			.catch(() => {
 				toast.error("Error adding environment");
