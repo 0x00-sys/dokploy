@@ -26,6 +26,7 @@ vi.mock("@/server/queues/deployments-queue", () => ({
 	processDeploymentJob: vi.fn(),
 }));
 
+import { getApplicationBuildKillCommand } from "@/server/queues/kill-build";
 import { killDockerBuild } from "@/server/queues/queueSetup";
 
 beforeEach(() => {
@@ -54,7 +55,7 @@ it("targets only the selected application build path", async () => {
 	await killDockerBuild("application", null, "app-one");
 
 	expect(mocks.execAsync).toHaveBeenCalledWith(
-		"pkill -2 -f '[/]etc/dokploy/applications/app-one/code'",
+		getApplicationBuildKillCommand("/etc/dokploy/applications/app-one/code"),
 	);
 });
 

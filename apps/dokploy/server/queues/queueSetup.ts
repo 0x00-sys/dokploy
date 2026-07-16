@@ -6,6 +6,7 @@ import {
 import { resolveBuildsConcurrency } from "./concurrency";
 import { processDeploymentJob } from "./deployments-queue";
 import { type InMemoryJob, InMemoryQueue } from "./in-memory-queue";
+import { getApplicationBuildKillCommand } from "./kill-build";
 import type { DeploymentJob } from "./queue-types";
 
 /**
@@ -127,15 +128,11 @@ export const killDockerBuild = async (
 	serverId: string | null,
 	appName: string,
 ) => {
-	const escapeProcessPattern = (value: string) =>
-		value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
 	const { APPLICATIONS_PATH, COMPOSE_PATH } = paths(true);
 
 	if (type === "application") {
-		const buildPath = escapeProcessPattern(
-			`${APPLICATIONS_PATH}/${appName}/code`,
-		);
-		const command = `pkill -2 -f '[/]${buildPath.slice(1)}'`;
+		const buildPath = `${APPLICATIONS_PATH}/${appName}/code`;
+		const command = getApplicationBuildKillCommand(buildPath);
 
 		if (serverId) {
 			await execAsyncRemote(serverId, command);
