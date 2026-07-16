@@ -9,7 +9,7 @@ import {
 	recordAdvancedStats,
 	validateRequest,
 } from "@dokploy/server";
-import { WebSocketServer } from "ws";
+import { type WebSocket, WebSocketServer } from "ws";
 import { isValidContainerId } from "./utils";
 
 export const setupDockerStatsMonitoringSocketServer = (
@@ -19,6 +19,12 @@ export const setupDockerStatsMonitoringSocketServer = (
 		noServer: true,
 		path: "/listen-docker-stats-monitoring",
 	});
+	type PollingState = {
+		clients: Set<WebSocket>;
+		intervalId?: ReturnType<typeof setInterval>;
+		isPolling: boolean;
+	};
+	const activePollers = new Map<string, PollingState>();
 
 	server.on("upgrade", (req, socket, head) => {
 		const { pathname } = new URL(req.url || "", `http://${req.headers.host}`);
@@ -35,11 +41,11 @@ export const setupDockerStatsMonitoringSocketServer = (
 
 	wssTerm.on("connection", async (ws, req) => {
 		const url = new URL(req.url || "", `http://${req.headers.host}`);
-		let stopPolling = () => {};
+		let unsubscribe = () => {};
 		let isClosed = false;
 		ws.on("close", () => {
 			isClosed = true;
-			stopPolling();
+			unsubscribe();
 		});
 
 		if (IS_CLOUD) {
@@ -76,91 +82,123 @@ export const setupDockerStatsMonitoringSocketServer = (
 			}
 		}
 		if (isClosed) return;
-		let isPolling = false;
-		const intervalId = setInterval(async () => {
-			if (isPolling) return;
-			isPolling = true;
-			try {
-				// Special case: when monitoring "dokploy", get host system stats instead of container stats
-				if (appName === "dokploy") {
-					const stat = await getHostSystemStats();
-
-					const data = await recordAdvancedStats(stat, appName);
-
-					ws.send(
-						JSON.stringify({
-							data,
-						}),
-					);
-					return;
+		const pollerKey = JSON.stringify([
+			session.activeOrganizationId,
+			serverId,
+			appType,
+			appName,
+		]);
+		let poller = activePollers.get(pollerKey);
+		if (!poller) {
+			const clients = new Set<WebSocket>();
+			const pollingState: PollingState = {
+				clients,
+				isPolling: false,
+			};
+			const sendToClients = (message: string) => {
+				for (const client of [...clients]) {
+					try {
+						client.send(message);
+					} catch {
+						client.close();
+					}
 				}
+			};
+			const closeClients = (code: number, reason: string) => {
+				for (const client of [...clients]) {
+					client.close(code, reason);
+				}
+			};
 
-				const filter = {
-					status: ["running"],
-					...(appType === "application" && {
-						label: [`com.docker.swarm.service.name=${appName}`],
-					}),
-					...(appType === "stack" && {
-						label: [`com.docker.stack.namespace=${appName}`],
-					}),
-					...(appType === "docker-compose" && {
-						label: [`com.docker.compose.project=${appName}`],
-					}),
-				};
+			pollingState.intervalId = setInterval(async () => {
+				if (pollingState.isPolling) return;
+				pollingState.isPolling = true;
+				try {
+					// Special case: when monitoring "dokploy", get host system stats instead of container stats
+					if (appName === "dokploy") {
+						const stat = await getHostSystemStats();
+						const data = await recordAdvancedStats(stat, appName);
+						sendToClients(JSON.stringify({ data }));
+						return;
+					}
 
-				const statsFormat = `\'{"BlockIO":"{{.BlockIO}}","CPUPerc":"{{.CPUPerc}}","Container":"{{.Container}}","ID":"{{.ID}}","MemPerc":"{{.MemPerc}}","MemUsage":"{{.MemUsage}}","Name":"{{.Name}}","NetIO":"{{.NetIO}}"}\'`;
-				let stdout = "";
-				let stderr = "";
-				if (serverId) {
-					const remoteFilter =
-						appType === "application"
-							? `label=com.docker.swarm.service.name=${appName}`
-							: appType === "stack"
-								? `label=com.docker.stack.namespace=${appName}`
-								: `label=com.docker.compose.project=${appName}`;
-					const result = await execAsyncRemote(
-						serverId,
-						`container_id=$(docker ps -q --filter "${remoteFilter}" | head -1); if [ -n "$container_id" ]; then docker stats "$container_id" --no-stream --format ${statsFormat}; fi`,
-					);
-					stdout = result.stdout;
-					stderr = result.stderr;
-				} else {
-					const containers = await docker.listContainers({
-						filters: JSON.stringify(filter),
-					});
-					const container = containers[0];
-					if (container?.State === "running") {
-						const result = await execAsync(
-							`docker stats ${container.Id} --no-stream --format ${statsFormat}`,
+					const filter = {
+						status: ["running"],
+						...(appType === "application" && {
+							label: [`com.docker.swarm.service.name=${appName}`],
+						}),
+						...(appType === "stack" && {
+							label: [`com.docker.stack.namespace=${appName}`],
+						}),
+						...(appType === "docker-compose" && {
+							label: [`com.docker.compose.project=${appName}`],
+						}),
+					};
+
+					const statsFormat = `\'{"BlockIO":"{{.BlockIO}}","CPUPerc":"{{.CPUPerc}}","Container":"{{.Container}}","ID":"{{.ID}}","MemPerc":"{{.MemPerc}}","MemUsage":"{{.MemUsage}}","Name":"{{.Name}}","NetIO":"{{.NetIO}}"}\'`;
+					let stdout = "";
+					let stderr = "";
+					if (serverId) {
+						const remoteFilter =
+							appType === "application"
+								? `label=com.docker.swarm.service.name=${appName}`
+								: appType === "stack"
+									? `label=com.docker.stack.namespace=${appName}`
+									: `label=com.docker.compose.project=${appName}`;
+						const result = await execAsyncRemote(
+							serverId,
+							`container_id=$(docker ps -q --filter "${remoteFilter}" | head -1); if [ -n "$container_id" ]; then docker stats "$container_id" --no-stream --format ${statsFormat}; fi`,
 						);
 						stdout = result.stdout;
 						stderr = result.stderr;
+					} else {
+						const containers = await docker.listContainers({
+							filters: JSON.stringify(filter),
+						});
+						const container = containers[0];
+						if (container?.State === "running") {
+							const result = await execAsync(
+								`docker stats ${container.Id} --no-stream --format ${statsFormat}`,
+							);
+							stdout = result.stdout;
+							stderr = result.stderr;
+						}
 					}
+					if (stderr) {
+						console.error("Docker stats error:", stderr);
+						return;
+					}
+					if (!stdout.trim()) {
+						closeClients(4000, "Container not running");
+						return;
+					}
+					const stat = JSON.parse(stdout);
+					const data = await recordAdvancedStats(stat, appName);
+					sendToClients(JSON.stringify({ data }));
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					closeClients(4000, `Error: ${message}`);
+				} finally {
+					pollingState.isPolling = false;
 				}
-				if (stderr) {
-					console.error("Docker stats error:", stderr);
-					return;
-				}
-				if (!stdout.trim()) {
-					ws.close(4000, "Container not running");
-					return;
-				}
-				const stat = JSON.parse(stdout);
+			}, 1300);
+			activePollers.set(pollerKey, pollingState);
+			poller = pollingState;
+		}
 
-				const data = await recordAdvancedStats(stat, appName);
-
-				ws.send(
-					JSON.stringify({
-						data,
-					}),
-				);
-			} catch (error) {
-				// @ts-ignore
-				ws.close(4000, `Error: ${error.message}`);
-			} finally {
-				isPolling = false;
+		poller.clients.add(ws);
+		const subscribedPoller = poller;
+		unsubscribe = () => {
+			subscribedPoller.clients.delete(ws);
+			if (subscribedPoller.clients.size === 0) {
+				if (subscribedPoller.intervalId) {
+					clearInterval(subscribedPoller.intervalId);
+				}
+				if (activePollers.get(pollerKey) === subscribedPoller) {
+					activePollers.delete(pollerKey);
+				}
 			}
-		}, 1300);
-		stopPolling = () => clearInterval(intervalId);
+		};
 	});
 };
