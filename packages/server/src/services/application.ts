@@ -1,6 +1,6 @@
-import { docker } from "@dokploy/server/constants";
 import { db } from "@dokploy/server/db";
 import {
+	APP_NAME_REGEX,
 	type apiCreateApplication,
 	applications,
 	buildAppName,
@@ -622,24 +622,12 @@ export const rebuildPreviewApplication = async ({
 };
 
 export const getApplicationStats = async (appName: string) => {
-	if (appName === "dokploy") {
-		return await getAdvancedStats(appName);
-	}
-	const filter = {
-		status: ["running"],
-		label: [`com.docker.swarm.service.name=${appName}`],
-	};
-
-	const containers = await docker.listContainers({
-		filters: JSON.stringify(filter),
-	});
-
-	const container = containers[0];
-	if (!container || container?.State !== "running") {
-		return null;
+	if (!APP_NAME_REGEX.test(appName) || appName === "." || appName === "..") {
+		throw new TRPCError({
+			code: "BAD_REQUEST",
+			message: "Invalid monitoring resource name",
+		});
 	}
 
-	const data = await getAdvancedStats(appName);
-
-	return data;
+	return await getAdvancedStats(appName);
 };

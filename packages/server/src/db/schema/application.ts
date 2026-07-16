@@ -535,9 +535,31 @@ export const apiSaveEnvironmentVariables = createSchema
 	})
 	.required();
 
-export const apiFindMonitoringStats = z.object({
-	appName: z.string().min(1),
-});
+const monitoringServiceType = z.enum([
+	"application",
+	"postgres",
+	"mariadb",
+	"mysql",
+	"mongo",
+	"redis",
+	"libsql",
+]);
+
+export const apiFindMonitoringStats = z.discriminatedUnion("serviceType", [
+	z.object({ serviceType: z.literal("dokploy") }),
+	z.object({
+		serviceType: monitoringServiceType,
+		serviceId: z.string().min(1),
+	}),
+	z.object({
+		serviceType: z.literal("compose"),
+		serviceId: z.string().min(1),
+		containerId: z
+			.string()
+			.min(1)
+			.regex(APP_NAME_REGEX, "Invalid container id"),
+	}),
+]);
 
 export const apiUpdateApplication = createSchema
 	.partial()

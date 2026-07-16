@@ -285,6 +285,10 @@ const Mongo = (
 															<ContainerFreeMonitoring
 																appName={data?.appName || ""}
 																serverId={data?.serverId || undefined}
+																monitoringTarget={{
+																	serviceType: "mongo",
+																	serviceId: mongoId,
+																}}
 															/>
 															{/* </div> */}
 															{/* )} */}

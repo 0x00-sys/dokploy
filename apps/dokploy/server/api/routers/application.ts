@@ -3,11 +3,19 @@ import {
 	createApplication,
 	deleteAllMiddlewares,
 	findApplicationById,
+	findComposeById,
 	findEnvironmentById,
+	findLibsqlById,
+	findMariadbById,
+	findMongoById,
+	findMySqlById,
+	findPostgresById,
 	findProjectById,
+	findRedisById,
 	getAccessibleServerIds,
 	getApplicationStats,
 	getContainerLogs,
+	getContainersByAppNameMatch,
 	getWebServerSettings,
 	IS_CLOUD,
 	mechanizeDockerContainer,
@@ -74,6 +82,77 @@ import {
 	myQueue,
 } from "@/server/queues/queueSetup";
 import { cancelDeployment, deploy } from "@/server/utils/deploy";
+
+type MonitoringInput = z.infer<typeof apiFindMonitoringStats>;
+
+const assertMonitoringOrganization = (
+	organizationId: string,
+	activeOrganizationId: string,
+) => {
+	if (organizationId !== activeOrganizationId) {
+		throw new TRPCError({
+			code: "UNAUTHORIZED",
+			message: "You are not authorized to access this service",
+		});
+	}
+};
+
+const resolveMonitoringAppName = async (
+	input: MonitoringInput,
+	ctx: Parameters<typeof checkServiceAccess>[0],
+) => {
+	if (input.serviceType === "dokploy") return "dokploy";
+
+	await checkServiceAccess(ctx, input.serviceId, "read");
+
+	if (input.serviceType === "compose") {
+		const compose = await findComposeById(input.serviceId);
+		assertMonitoringOrganization(
+			compose.environment.project.organizationId,
+			ctx.session.activeOrganizationId,
+		);
+		const containers = await getContainersByAppNameMatch(
+			compose.appName,
+			compose.composeType,
+			compose.serverId ?? undefined,
+		);
+		const container = containers.find(
+			(candidate) => candidate.containerId === input.containerId,
+		);
+		if (!container) {
+			throw new TRPCError({
+				code: "NOT_FOUND",
+				message: "Container not found for this compose service",
+			});
+		}
+		return container.name;
+	}
+
+	const service = await (async () => {
+		switch (input.serviceType) {
+			case "application":
+				return await findApplicationById(input.serviceId);
+			case "postgres":
+				return await findPostgresById(input.serviceId);
+			case "mariadb":
+				return await findMariadbById(input.serviceId);
+			case "mysql":
+				return await findMySqlById(input.serviceId);
+			case "mongo":
+				return await findMongoById(input.serviceId);
+			case "redis":
+				return await findRedisById(input.serviceId);
+			case "libsql":
+				return await findLibsqlById(input.serviceId);
+		}
+	})();
+
+	assertMonitoringOrganization(
+		service.environment.project.organizationId,
+		ctx.session.activeOrganizationId,
+	);
+	return service.appName;
+};
 
 export const applicationRouter = createTRPCRouter({
 	create: protectedProcedure
@@ -883,14 +962,15 @@ export const applicationRouter = createTRPCRouter({
 		}),
 	readAppMonitoring: withPermission("monitoring", "read")
 		.input(apiFindMonitoringStats)
-		.query(async ({ input }) => {
+		.query(async ({ input, ctx }) => {
 			if (IS_CLOUD) {
 				throw new TRPCError({
 					code: "UNAUTHORIZED",
 					message: "Functionality not available in cloud version",
 				});
 			}
-			const stats = await getApplicationStats(input.appName);
+			const appName = await resolveMonitoringAppName(input, ctx);
+			const stats = await getApplicationStats(appName);
 
 			return stats;
 		}),

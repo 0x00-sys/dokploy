@@ -115,7 +115,9 @@ export const getContainersByAppNameMatch = async (
 		const command =
 			appType === "docker-compose"
 				? `${cmd} --filter='label=com.docker.compose.project=${appName}'`
-				: `${cmd} | grep '^.*Name: ${appName}'`;
+				: appType === "stack"
+					? `${cmd} --filter='label=com.docker.stack.namespace=${appName}'`
+					: `${cmd} | grep '^.*Name: ${appName}'`;
 		if (serverId) {
 			const { stdout, stderr } = await execAsyncRemote(serverId, command);
 

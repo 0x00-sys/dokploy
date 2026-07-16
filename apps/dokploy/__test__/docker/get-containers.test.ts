@@ -6,7 +6,10 @@ vi.mock("@dokploy/server/utils/process/execAsync", () => ({
 	execAsyncRemote: vi.fn(),
 }));
 
-import { getContainers } from "@dokploy/server/services/docker";
+import {
+	getContainers,
+	getContainersByAppNameMatch,
+} from "@dokploy/server/services/docker";
 
 describe("getContainers", () => {
 	beforeEach(() => {
@@ -40,5 +43,51 @@ describe("getContainers", () => {
 				serverId: undefined,
 			},
 		]);
+	});
+});
+
+describe("getContainersByAppNameMatch", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("scopes stack containers by their exact namespace label", async () => {
+		const ownContainer =
+			"CONTAINER ID : own123 | Name: stack-app_web.1 | State: running | Status: Up 1 minute";
+		const prefixCollision =
+			"CONTAINER ID : other456 | Name: stack-app-other_web.1 | State: running | Status: Up 1 minute";
+		vi.mocked(execProcess.execAsync).mockImplementation(async (command) => ({
+			stdout: command.includes("com.docker.stack.namespace=stack-app")
+				? `${ownContainer}\n`
+				: `${ownContainer}\n${prefixCollision}\n`,
+			stderr: "",
+		}));
+
+		await expect(
+			getContainersByAppNameMatch("stack-app", "stack"),
+		).resolves.toEqual([expect.objectContaining({ containerId: "own123" })]);
+		expect(execProcess.execAsync).toHaveBeenCalledWith(
+			expect.stringContaining(
+				"--filter='label=com.docker.stack.namespace=stack-app'",
+			),
+		);
+		expect(execProcess.execAsync).not.toHaveBeenCalledWith(
+			expect.stringContaining("grep"),
+		);
+	});
+
+	it("preserves native container name matching when appType is omitted", async () => {
+		vi.mocked(execProcess.execAsync).mockResolvedValue({
+			stdout:
+				"CONTAINER ID : native123 | Name: native-app | State: running | Status: Up 1 minute\n",
+			stderr: "",
+		});
+
+		await expect(getContainersByAppNameMatch("native-app")).resolves.toEqual([
+			expect.objectContaining({ containerId: "native123" }),
+		]);
+		expect(execProcess.execAsync).toHaveBeenCalledWith(
+			expect.stringContaining("grep '^.*Name: native-app'"),
+		);
 	});
 });

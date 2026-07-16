@@ -45,6 +45,20 @@ interface Props {
 	appName: string;
 	appType?: "application" | "stack" | "docker-compose";
 	serverId?: string;
+	monitoringTarget:
+		| { serviceType: "dokploy" }
+		| {
+				serviceType:
+					| "application"
+					| "postgres"
+					| "mariadb"
+					| "mysql"
+					| "mongo"
+					| "redis"
+					| "libsql";
+				serviceId: string;
+		  }
+		| { serviceType: "compose"; serviceId: string; containerId: string };
 }
 export interface DockerStats {
 	cpu: {
@@ -120,9 +134,10 @@ export const ContainerFreeMonitoring = ({
 	appName,
 	appType = "application",
 	serverId,
+	monitoringTarget,
 }: Props) => {
 	const { data } = api.application.readAppMonitoring.useQuery(
-		{ appName },
+		monitoringTarget,
 		{
 			refetchOnWindowFocus: false,
 		},
