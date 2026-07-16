@@ -33,6 +33,19 @@ const getPackageVersion = (headers: any, body: any) => {
 	return null;
 };
 
+export const extractGithubTagName = (headers: any, body: any) => {
+	if (headers["x-github-event"] !== "push") {
+		return null;
+	}
+
+	const ref = body?.ref;
+	if (typeof ref !== "string" || !ref.startsWith("refs/tags/")) {
+		return null;
+	}
+
+	return ref.slice("refs/tags/".length) || null;
+};
+
 export default async function handler(
 	req: NextApiRequest,
 	res: NextApiResponse,
@@ -66,7 +79,7 @@ export default async function handler(
 			return;
 		}
 
-		const deploymentTitle = extractCommitMessage(req.headers, req.body);
+		let deploymentTitle = extractCommitMessage(req.headers, req.body);
 
 		const deploymentHash = extractHash(req.headers, req.body);
 		const sourceType = application.sourceType;
@@ -120,24 +133,39 @@ export default async function handler(
 			}
 			// If webhook doesn't provide image info, we'll use the configured image (old behavior)
 		} else if (sourceType === "github") {
-			const normalizedCommits = normalizeChangedFilesFromCommits(
-				req.body?.commits,
-			);
+			const tagName = extractGithubTagName(req.headers, req.body);
 
-			const shouldDeployPaths = shouldDeploy(
-				application.watchPaths,
-				normalizedCommits,
-			);
+			if (application.triggerType === "tag") {
+				if (!tagName || req.body?.deleted === true) {
+					res.status(301).json({ message: "Trigger Type Not Match" });
+					return;
+				}
+				deploymentTitle = `Tag created: ${tagName}`;
+			} else {
+				if (tagName) {
+					res.status(301).json({ message: "Trigger Type Not Match" });
+					return;
+				}
 
-			if (!shouldDeployPaths) {
-				res.status(301).json({ message: "Watch Paths Not Match" });
-				return;
-			}
+				const normalizedCommits = normalizeChangedFilesFromCommits(
+					req.body?.commits,
+				);
 
-			const branchName = extractBranchName(req.headers, req.body);
-			if (!branchName || branchName !== application.branch) {
-				res.status(301).json({ message: "Branch Not Match" });
-				return;
+				const shouldDeployPaths = shouldDeploy(
+					application.watchPaths,
+					normalizedCommits,
+				);
+
+				if (!shouldDeployPaths) {
+					res.status(301).json({ message: "Watch Paths Not Match" });
+					return;
+				}
+
+				const branchName = extractBranchName(req.headers, req.body);
+				if (!branchName || branchName !== application.branch) {
+					res.status(301).json({ message: "Branch Not Match" });
+					return;
+				}
 			}
 		} else if (sourceType === "git") {
 			const branchName = extractBranchName(req.headers, req.body);
