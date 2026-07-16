@@ -332,6 +332,10 @@ const Service = (
 																<ContainerFreeMonitoring
 																	appName={data?.appName || ""}
 																	serverId={data?.serverId || undefined}
+																	monitoringTarget={{
+																		serviceType: "application",
+																		serviceId: applicationId,
+																	}}
 																/>
 															</div>
 															{/* )} */}

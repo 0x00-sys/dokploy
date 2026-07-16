@@ -367,6 +367,7 @@ const Service = (
 														) : ( */}
 															{/* <div> */}
 															<ComposeFreeMonitoring
+																composeId={composeId}
 																serverId={data?.serverId || ""}
 																appName={data?.appName || ""}
 																appType={data?.composeType || "docker-compose"}

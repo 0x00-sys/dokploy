@@ -24,12 +24,14 @@ import { api } from "@/utils/api";
 import { ContainerFreeMonitoring } from "./show-free-container-monitoring";
 
 interface Props {
+	composeId: string;
 	appName: string;
 	serverId?: string;
 	appType: "stack" | "docker-compose";
 }
 
 export const ComposeFreeMonitoring = ({
+	composeId,
 	appName,
 	appType = "stack",
 	serverId,
@@ -120,11 +122,18 @@ export const ComposeFreeMonitoring = ({
 						Restart
 					</Button>
 				</div>
-				<ContainerFreeMonitoring
-					appName={containerAppName || ""}
-					appType={appType}
-					serverId={serverId}
-				/>
+				{containerAppName && containerId ? (
+					<ContainerFreeMonitoring
+						appName={containerAppName}
+						appType={appType}
+						serverId={serverId}
+						monitoringTarget={{
+							serviceType: "compose",
+							serviceId: composeId,
+							containerId,
+						}}
+					/>
+				) : null}
 			</CardContent>
 		</>
 	);

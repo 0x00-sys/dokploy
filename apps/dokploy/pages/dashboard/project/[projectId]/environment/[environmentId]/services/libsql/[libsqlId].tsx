@@ -257,6 +257,10 @@ const Libsql = (
 														<ContainerFreeMonitoring
 															appName={data?.appName || ""}
 															serverId={data?.serverId || undefined}
+															monitoringTarget={{
+																serviceType: "libsql",
+																serviceId: libsqlId,
+															}}
 														/>
 														{/* </div> */}
 														{/* )} */}

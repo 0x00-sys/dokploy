@@ -285,6 +285,10 @@ const Mariadb = (
 															<ContainerFreeMonitoring
 																appName={data?.appName || ""}
 																serverId={data?.serverId || undefined}
+																monitoringTarget={{
+																	serviceType: "mariadb",
+																	serviceId: mariadbId,
+																}}
 															/>
 															{/* </div> */}
 															{/* )} */}

@@ -283,6 +283,10 @@ const Redis = (
 															<ContainerFreeMonitoring
 																appName={data?.appName || ""}
 																serverId={data?.serverId || undefined}
+																monitoringTarget={{
+																	serviceType: "redis",
+																	serviceId: redisId,
+																}}
 															/>
 															{/* </div> */}
 															{/* )} */}
