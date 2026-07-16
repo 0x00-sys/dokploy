@@ -1,6 +1,5 @@
 import { standardSchemaResolver as zodResolver } from "@hookform/resolvers/standard-schema";
 import copy from "copy-to-clipboard";
-import debounce from "lodash/debounce";
 import { CheckIcon, ChevronsUpDown, Copy, RotateCcw } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useState } from "react";
@@ -44,6 +43,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { api, type RouterInputs } from "@/utils/api";
+import { useDebouncedCallback } from "@/utils/hooks/use-debounce";
 import { formatBytes } from "../../database/backups/restore-backup";
 import { type LogLine, parseLogs } from "../../docker/logs/utils";
 
@@ -69,6 +69,10 @@ export const RestoreVolumeBackups = ({ id, type, serverId }: Props) => {
 	const [isOpen, setIsOpen] = useState(false);
 	const [search, setSearch] = useState("");
 	const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+	const debouncedSetSearchTerm = useDebouncedCallback(
+		setDebouncedSearchTerm,
+		350,
+	);
 
 	const { data: destinations = [] } = api.destination.all.useQuery();
 
@@ -85,13 +89,9 @@ export const RestoreVolumeBackups = ({ id, type, serverId }: Props) => {
 	const volumeName = form.watch("volumeName");
 	const backupFile = form.watch("backupFile");
 
-	const debouncedSetSearch = debounce((value: string) => {
-		setDebouncedSearchTerm(value);
-	}, 350);
-
 	const handleSearchChange = (value: string) => {
 		setSearch(value);
-		debouncedSetSearch(value);
+		debouncedSetSearchTerm(value);
 	};
 
 	const { data: files = [], isPending } = api.backup.listBackupFiles.useQuery(
@@ -321,6 +321,7 @@ export const RestoreVolumeBackups = ({ id, type, serverId }: Props) => {
 																	key={file.Path}
 																	onSelect={() => {
 																		form.setValue("backupFile", file.Path);
+																		debouncedSetSearchTerm.cancel();
 																		if (file.IsDir) {
 																			setSearch(`${file.Path}/`);
 																			setDebouncedSearchTerm(`${file.Path}/`);
