@@ -10,7 +10,7 @@ import {
 	findScheduleById,
 	IS_CLOUD,
 	removeDeployment,
-	resolveServicePath,
+	resolveServicePaths,
 	updateDeploymentStatus,
 } from "@dokploy/server";
 import { db } from "@dokploy/server/db";
@@ -153,15 +153,14 @@ export const deploymentRouter = createTRPCRouter({
 			rows = jobRows;
 		}
 
-		return Promise.all(
-			rows.map(async (row) => ({
-				...row,
-				servicePath: await resolveServicePath(
-					orgId,
-					(row.data ?? {}) as Record<string, unknown>,
-				),
-			})),
+		const servicePaths = await resolveServicePaths(
+			orgId,
+			rows.map((row) => (row.data ?? {}) as Record<string, unknown>),
 		);
+		return rows.map((row, index) => ({
+			...row,
+			servicePath: servicePaths[index] ?? { href: null, label: "—" },
+		}));
 	}),
 
 	allByType: protectedProcedure
