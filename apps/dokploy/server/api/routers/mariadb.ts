@@ -30,11 +30,11 @@ import {
 	findMemberByUserId,
 } from "@dokploy/server/services/permission";
 import { TRPCError } from "@trpc/server";
-import { observable } from "@trpc/server/observable";
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { audit } from "@/server/api/utils/audit";
+import { createDatabaseDeployOperation } from "@/server/api/utils/database-deploy-operation";
 import {
 	apiChangeMariaDBStatus,
 	apiCreateMariaDB,
@@ -241,18 +241,26 @@ export const mariadbRouter = createTRPCRouter({
 				enabled: false,
 			},
 		})
-		.input(apiDeployMariaDB)
+		.input(
+			apiDeployMariaDB.extend({
+				operationId: z
+					.string()
+					.min(16)
+					.max(64)
+					.regex(/^[A-Za-z0-9_-]+$/),
+			}),
+		)
 		.subscription(async ({ input, ctx }) => {
 			await checkServicePermissionAndAccess(ctx, input.mariadbId, {
 				deployment: ["create"],
 			});
 
-			return observable<string>((emit) => {
-				void deployMariadb(input.mariadbId, (log) => {
-					emit.next(log);
-				})
-					.catch(() => {})
-					.finally(() => emit.complete());
+			return createDatabaseDeployOperation({
+				scope: `${ctx.session.activeOrganizationId}:${ctx.user.id}`,
+				operationId: input.operationId,
+				databaseType: "mariadb",
+				databaseId: input.mariadbId,
+				deploy: deployMariadb,
 			});
 		}),
 	changeStatus: protectedProcedure

@@ -1,4 +1,5 @@
 import { Ban, CheckCircle2, RefreshCcw, Rocket, Terminal } from "lucide-react";
+import { nanoid } from "nanoid";
 import { Tooltip as TooltipPrimitive } from "radix-ui";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -41,12 +42,16 @@ export const ShowGeneralRedis = ({ redisId }: Props) => {
 	const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 	const [filteredLogs, setFilteredLogs] = useState<LogLine[]>([]);
 	const [isDeploying, setIsDeploying] = useState(false);
+	const [deploymentOperationId, setDeploymentOperationId] = useState<
+		string | null
+	>(null);
 	api.redis.deployWithLogs.useSubscription(
 		{
 			redisId: redisId,
+			operationId: deploymentOperationId ?? "disabled-deploy-operation",
 		},
 		{
-			enabled: isDeploying,
+			enabled: isDeploying && deploymentOperationId !== null,
 			onData(log) {
 				if (!isDrawerOpen) {
 					setIsDrawerOpen(true);
@@ -63,6 +68,7 @@ export const ShowGeneralRedis = ({ redisId }: Props) => {
 			},
 			onError(error) {
 				console.error("Deployment logs error:", error);
+				toast.error(error.message);
 				setIsDeploying(false);
 			},
 		},
@@ -83,6 +89,7 @@ export const ShowGeneralRedis = ({ redisId }: Props) => {
 									description="Are you sure you want to deploy this redis?"
 									type="default"
 									onClick={async () => {
+										setDeploymentOperationId(nanoid());
 										setIsDeploying(true);
 										await new Promise((resolve) => setTimeout(resolve, 1000));
 										refetch();
@@ -90,7 +97,9 @@ export const ShowGeneralRedis = ({ redisId }: Props) => {
 								>
 									<Button
 										variant="default"
-										isLoading={data?.applicationStatus === "running"}
+										isLoading={
+											isDeploying || data?.applicationStatus === "running"
+										}
 										className="flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-offset-2"
 									>
 										<Tooltip>

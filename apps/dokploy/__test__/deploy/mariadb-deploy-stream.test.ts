@@ -36,7 +36,10 @@ it("completes the deployment log stream when MariaDB deployment finishes", async
 	mocks.deployMariadb.mockImplementation(async (_mariadbId, onData) => {
 		onData?.("Deployment completed successfully!");
 	});
-	const stream = await caller.deployWithLogs({ mariadbId: "mariadb-1" });
+	const stream = await caller.deployWithLogs({
+		operationId: "00000000-0000-4000-8000-000000000040",
+		mariadbId: "mariadb-success",
+	});
 	const complete = vi.fn();
 	const next = vi.fn();
 
@@ -51,7 +54,10 @@ it("completes the deployment log stream after a MariaDB deployment failure", asy
 		onData?.("Error: deployment failed");
 		throw new Error("deployment failed");
 	});
-	const stream = await caller.deployWithLogs({ mariadbId: "mariadb-1" });
+	const stream = await caller.deployWithLogs({
+		operationId: "00000000-0000-4000-8000-000000000041",
+		mariadbId: "mariadb-failure",
+	});
 	const complete = vi.fn();
 	const next = vi.fn();
 

@@ -28,6 +28,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { audit } from "@/server/api/utils/audit";
+import { createDatabaseDeployOperation } from "@/server/api/utils/database-deploy-operation";
 import { db } from "@/server/db";
 import {
 	apiChangeLibsqlStatus,
@@ -257,38 +258,27 @@ export const libsqlRouter = createTRPCRouter({
 				enabled: false,
 			},
 		})
-		.input(apiDeployLibsql)
-		.subscription(async function* ({ input, ctx, signal }) {
+		.input(
+			apiDeployLibsql.extend({
+				operationId: z
+					.string()
+					.min(16)
+					.max(64)
+					.regex(/^[A-Za-z0-9_-]+$/),
+			}),
+		)
+		.subscription(async ({ input, ctx }) => {
 			await checkServicePermissionAndAccess(ctx, input.libsqlId, {
 				deployment: ["create"],
 			});
-			const queue: string[] = [];
-			let done = false;
-			let acceptingLogs = true;
 
-			deployLibsql(input.libsqlId, (log) => {
-				if (acceptingLogs) queue.push(log);
-			})
-				.catch(() => {})
-				.finally(() => {
-					done = true;
-				});
-
-			try {
-				while (!done || queue.length > 0) {
-					if (queue.length > 0) {
-						yield queue.shift()!;
-					} else {
-						await new Promise((r) => setTimeout(r, 50));
-					}
-
-					if (signal?.aborted) {
-						return;
-					}
-				}
-			} finally {
-				acceptingLogs = false;
-			}
+			return createDatabaseDeployOperation({
+				scope: `${ctx.session.activeOrganizationId}:${ctx.user.id}`,
+				operationId: input.operationId,
+				databaseType: "libsql",
+				databaseId: input.libsqlId,
+				deploy: deployLibsql,
+			});
 		}),
 	changeStatus: protectedProcedure
 		.input(apiChangeLibsqlStatus)
