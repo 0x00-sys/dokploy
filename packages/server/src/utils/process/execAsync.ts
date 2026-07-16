@@ -28,7 +28,7 @@ export const execAsync = async (
 			// @ts-ignore
 			const stderr = error.stderr?.toString() || "";
 
-			throw new ExecError(`Command execution failed: ${error.message}`, {
+			throw new ExecError("Command execution failed", {
 				command,
 				stdout,
 				stderr,
