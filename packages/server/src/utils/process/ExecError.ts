@@ -24,6 +24,9 @@ export class ExecError extends Error {
 		this.exitCode = details.exitCode;
 		this.originalError = details.originalError;
 		this.serverId = details.serverId;
+		for (const property of ["command", "stdout", "stderr", "originalError"]) {
+			Object.defineProperty(this, property, { enumerable: false });
+		}
 
 		// Maintains proper stack trace for where our error was thrown (only available on V8)
 		if (Error.captureStackTrace) {
