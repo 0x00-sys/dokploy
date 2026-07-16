@@ -48,6 +48,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { api } from "@/utils/api";
+import { useDebounce } from "@/utils/hooks/use-debounce";
 import { columns, getStatusColor } from "./columns";
 import type { LogEntry } from "./show-requests";
 import { DataTableFacetedFilter } from "./status-request-filter";
@@ -90,6 +91,7 @@ export interface RequestsTableProps {
 export const RequestsTable = ({ dateRange }: RequestsTableProps) => {
 	const [statusFilter, setStatusFilter] = useState<string[]>([]);
 	const [search, setSearch] = useState("");
+	const debouncedSearch = useDebounce(search, 350);
 	const [selectedRow, setSelectedRow] = useState<LogEntry>();
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
@@ -104,7 +106,7 @@ export const RequestsTable = ({ dateRange }: RequestsTableProps) => {
 		{
 			sort: sorting[0],
 			page: pagination,
-			search,
+			search: debouncedSearch,
 			status: statusFilter,
 			dateRange: dateRange
 				? {
