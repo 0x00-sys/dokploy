@@ -57,6 +57,7 @@ import {
 } from "@/server/api/trpc";
 import { audit } from "@/server/api/utils/audit";
 import { assertDatabaseBackupLimit } from "@/server/api/utils/plan-limits";
+import { runWithRestoreLock } from "@/server/api/utils/restore-lock";
 import {
 	apiCreateBackup,
 	apiFindOneBackup,
@@ -677,7 +678,13 @@ export const backupRouter = createTRPCRouter({
 					await restoreComposeBackup(compose, destination, input, onLog);
 				}
 			};
-			runRestore()
+			const restoreKey =
+				input.backupType === "compose"
+					? `compose:${input.databaseId}`
+					: input.databaseType === "web-server"
+						? "web-server"
+						: `${input.databaseType}:${input.databaseId}`;
+			runWithRestoreLock(restoreKey, runRestore)
 				.catch((error) => {
 					onLog(
 						`Error: ${error instanceof Error ? error.message : String(error)}`,
