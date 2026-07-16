@@ -1,6 +1,6 @@
 import type http from "node:http";
 import { findServerById, IS_CLOUD, validateRequest } from "@dokploy/server";
-import { spawn } from "node-pty";
+import { type IPty, spawn } from "node-pty";
 import { Client } from "ssh2";
 import { WebSocketServer } from "ws";
 import {
@@ -10,6 +10,19 @@ import {
 	isValidSince,
 	isValidTail,
 } from "./utils";
+
+export const killLocalLogProcessGroup = (
+	ptyProcess: Pick<IPty, "kill" | "pid">,
+) => {
+	if (process.platform !== "win32" && ptyProcess.pid > 0) {
+		try {
+			process.kill(-ptyProcess.pid, "SIGKILL");
+			return;
+		} catch {}
+	}
+
+	ptyProcess.kill("SIGKILL");
+};
 
 export const setupDockerContainerLogsWebSocketServer = (
 	server: http.Server<typeof http.IncomingMessage, typeof http.ServerResponse>,
@@ -175,13 +188,22 @@ export const setupDockerContainerLogsWebSocketServer = (
 					cols: 80,
 					rows: 30,
 				});
+				let logProcessExited = false;
 
 				ptyProcess.onData((data) => {
 					ws.send(data);
 				});
+				ptyProcess.onExit(() => {
+					logProcessExited = true;
+					if (ws.readyState === ws.OPEN) {
+						ws.close();
+					}
+				});
 				ws.on("close", () => {
 					clearInterval(pingInterval);
-					ptyProcess.kill();
+					if (!logProcessExited) {
+						killLocalLogProcessGroup(ptyProcess);
+					}
 				});
 				ws.on("message", (message) => {
 					try {

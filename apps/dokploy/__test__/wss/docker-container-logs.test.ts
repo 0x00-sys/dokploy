@@ -4,6 +4,13 @@ const mocks = vi.hoisted(() => ({
 	wssHandlers: new Map<string, (...args: any[]) => unknown>(),
 	clientConnect: vi.fn(),
 	findServerById: vi.fn(),
+	ptyProcess: {
+		kill: vi.fn(),
+		onData: vi.fn(),
+		onExit: vi.fn(),
+		pid: 4321,
+		write: vi.fn(),
+	},
 	spawn: vi.fn(),
 	validateRequest: vi.fn(),
 }));
@@ -47,18 +54,17 @@ describe("container log sockets", () => {
 		vi.useFakeTimers();
 		vi.clearAllMocks();
 		mocks.wssHandlers.clear();
-		mocks.spawn.mockReturnValue({
-			onData: vi.fn(),
-			kill: vi.fn(),
-			write: vi.fn(),
-		});
+		mocks.spawn.mockReturnValue(mocks.ptyProcess);
 		mocks.validateRequest.mockResolvedValue({
 			user: { id: "user-1" },
 			session: { activeOrganizationId: "org-1" },
 		});
 	});
 
-	afterEach(() => vi.useRealTimers());
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.useRealTimers();
+	});
 
 	const openSocket = (
 		url = "/docker-container-logs?containerId=abc123&serverId=server-1",
@@ -130,6 +136,47 @@ describe("container log sockets", () => {
 		expect(mocks.spawn).not.toHaveBeenCalled();
 		expect(ws.ping).not.toHaveBeenCalled();
 		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("kills the local log process group when the socket disconnects", async () => {
+		const kill = vi.spyOn(process, "kill").mockReturnValue(true);
+		const { connection, disconnect } = openSocket(
+			"/docker-container-logs?containerId=abc123",
+		);
+		await connection;
+
+		disconnect();
+
+		expect(kill).toHaveBeenCalledWith(-mocks.ptyProcess.pid, "SIGKILL");
+		expect(mocks.ptyProcess.kill).not.toHaveBeenCalled();
+	});
+
+	it("falls back to killing the PTY when the process group is unavailable", async () => {
+		vi.spyOn(process, "kill").mockImplementation(() => {
+			throw new Error("process group unavailable");
+		});
+		const { connection, disconnect } = openSocket(
+			"/docker-container-logs?containerId=abc123",
+		);
+		await connection;
+
+		disconnect();
+
+		expect(mocks.ptyProcess.kill).toHaveBeenCalledWith("SIGKILL");
+	});
+
+	it("does not signal a process group after the log process exits", async () => {
+		const kill = vi.spyOn(process, "kill").mockReturnValue(true);
+		const { connection, ws } = openSocket(
+			"/docker-container-logs?containerId=abc123",
+		);
+		await connection;
+		const onExit = mocks.ptyProcess.onExit.mock.calls[0]?.[0];
+
+		onExit?.({ exitCode: 0, signal: 0 });
+
+		expect(ws.close).toHaveBeenCalledOnce();
+		expect(kill).not.toHaveBeenCalled();
 	});
 
 	it("does not open SSH after disconnecting during server lookup", async () => {
