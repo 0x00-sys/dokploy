@@ -57,7 +57,10 @@ import {
 } from "@/server/api/trpc";
 import { audit } from "@/server/api/utils/audit";
 import { assertDatabaseBackupLimit } from "@/server/api/utils/plan-limits";
-import { runWithRestoreLock } from "@/server/api/utils/restore-lock";
+import {
+	fingerprintRestoreInput,
+	getOrCreateRestoreOperation,
+} from "@/server/api/utils/restore-lock";
 import {
 	apiCreateBackup,
 	apiFindOneBackup,
@@ -626,7 +629,15 @@ export const backupRouter = createTRPCRouter({
 				override: true,
 			},
 		})
-		.input(apiRestoreBackup)
+		.input(
+			apiRestoreBackup.extend({
+				operationId: z
+					.string()
+					.min(16)
+					.max(64)
+					.regex(/^[A-Za-z0-9_-]+$/),
+			}),
+		)
 		.subscription(async function* ({ input, ctx, signal }) {
 			if (
 				input.databaseType === "web-server" &&
@@ -653,29 +664,29 @@ export const backupRouter = createTRPCRouter({
 			const onLog = (log: string) => {
 				if (acceptingLogs) queue.push(log);
 			};
-			const runRestore = async () => {
+			const runRestore = async (emit: (log: string) => void) => {
 				if (input.backupType === "database") {
 					if (input.databaseType === "postgres") {
 						const postgres = await findPostgresById(input.databaseId);
-						await restorePostgresBackup(postgres, destination, input, onLog);
+						await restorePostgresBackup(postgres, destination, input, emit);
 					} else if (input.databaseType === "mysql") {
 						const mysql = await findMySqlById(input.databaseId);
-						await restoreMySqlBackup(mysql, destination, input, onLog);
+						await restoreMySqlBackup(mysql, destination, input, emit);
 					} else if (input.databaseType === "mariadb") {
 						const mariadb = await findMariadbById(input.databaseId);
-						await restoreMariadbBackup(mariadb, destination, input, onLog);
+						await restoreMariadbBackup(mariadb, destination, input, emit);
 					} else if (input.databaseType === "mongo") {
 						const mongo = await findMongoById(input.databaseId);
-						await restoreMongoBackup(mongo, destination, input, onLog);
+						await restoreMongoBackup(mongo, destination, input, emit);
 					} else if (input.databaseType === "libsql") {
 						const libsql = await findLibsqlById(input.databaseId);
-						await restoreLibsqlBackup(libsql, destination, input, onLog);
+						await restoreLibsqlBackup(libsql, destination, input, emit);
 					} else if (input.databaseType === "web-server") {
-						await restoreWebServerBackup(destination, input.backupFile, onLog);
+						await restoreWebServerBackup(destination, input.backupFile, emit);
 					}
 				} else if (input.backupType === "compose") {
 					const compose = await findComposeById(input.databaseId);
-					await restoreComposeBackup(compose, destination, input, onLog);
+					await restoreComposeBackup(compose, destination, input, emit);
 				}
 			};
 			const restoreKey =
@@ -684,15 +695,25 @@ export const backupRouter = createTRPCRouter({
 					: input.databaseType === "web-server"
 						? "web-server"
 						: `${input.databaseType}:${input.databaseId}`;
-			runWithRestoreLock(restoreKey, runRestore)
-				.catch((error) => {
-					onLog(
-						`Error: ${error instanceof Error ? error.message : String(error)}`,
-					);
-				})
-				.finally(() => {
-					done = true;
-				});
+			const fingerprint = fingerprintRestoreInput({
+				backupFile: input.backupFile,
+				backupType: input.backupType,
+				databaseId: input.databaseId,
+				databaseName: input.databaseName,
+				databaseType: input.databaseType,
+				destinationId: input.destinationId,
+				metadata: input.metadata,
+			});
+			const operation = getOrCreateRestoreOperation({
+				scope: `${ctx.session.activeOrganizationId}:${ctx.user.id}`,
+				key: `database:${input.operationId}`,
+				fingerprint,
+				resourceKey: restoreKey,
+				run: runRestore,
+			});
+			const unsubscribe = operation.subscribe(onLog, () => {
+				done = true;
+			});
 			try {
 				while (!done || queue.length > 0) {
 					if (queue.length > 0) {
@@ -707,6 +728,7 @@ export const backupRouter = createTRPCRouter({
 				}
 			} finally {
 				acceptingLogs = false;
+				unsubscribe();
 			}
 		}),
 });

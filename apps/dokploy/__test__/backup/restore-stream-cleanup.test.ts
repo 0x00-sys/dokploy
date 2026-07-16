@@ -67,6 +67,7 @@ it("stops buffering restore logs after the subscription closes", async () => {
 		},
 	);
 	const stream = await caller.restoreBackupWithLogs({
+		operationId: "00000000-0000-4000-8000-000000000001",
 		databaseId: "",
 		databaseType: "web-server",
 		backupType: "database",
@@ -102,7 +103,7 @@ it("stops buffering restore logs after the subscription closes", async () => {
 	}
 });
 
-it("serializes restores for the same service", async () => {
+it("reuses a restore operation across subscription reconnects", async () => {
 	let finishRestore: (() => void) | undefined;
 	mocks.restorePostgresBackup.mockImplementation(
 		async (_postgres, _destination, _input, onData) => {
@@ -110,9 +111,11 @@ it("serializes restores for the same service", async () => {
 			await new Promise<void>((resolve) => {
 				finishRestore = resolve;
 			});
+			onData?.("restore completed");
 		},
 	);
 	const input = {
+		operationId: "00000000-0000-4000-8000-000000000002",
 		databaseId: "postgres-1",
 		databaseType: "postgres" as const,
 		backupType: "database" as const,
@@ -131,13 +134,28 @@ it("serializes restores for the same service", async () => {
 
 	const secondStream = await caller.restoreBackupWithLogs(input);
 	const secondIterator = secondStream[Symbol.asyncIterator]();
-	await expect(secondIterator.next()).resolves.toEqual({
-		done: false,
-		value: "Error: A restore is already running for this service",
+	const secondNext = secondIterator.next();
+
+	const competingStream = await caller.restoreBackupWithLogs({
+		...input,
+		operationId: "00000000-0000-4000-8000-000000000003",
 	});
+	const competingIterator = competingStream[Symbol.asyncIterator]();
+	await expect(competingIterator.next()).rejects.toThrow(
+		"A restore is already running for this service",
+	);
 	expect(mocks.restorePostgresBackup).toHaveBeenCalledTimes(1);
 
 	finishRestore?.();
+	await expect(secondNext).resolves.toEqual({
+		done: false,
+		value: "restore completed",
+	});
+	await expect(firstIterator.next()).resolves.toEqual({
+		done: false,
+		value: "restore completed",
+	});
+	expect(mocks.restorePostgresBackup).toHaveBeenCalledTimes(1);
 	await expect(firstIterator.next()).resolves.toEqual({
 		done: true,
 		value: undefined,
@@ -151,11 +169,40 @@ it("serializes restores for the same service", async () => {
 	const thirdIterator = thirdStream[Symbol.asyncIterator]();
 	await expect(thirdIterator.next()).resolves.toEqual({
 		done: false,
+		value: "restore completed",
+	});
+	await expect(thirdIterator.next()).resolves.toEqual({
+		done: true,
+		value: undefined,
+	});
+	expect(mocks.restorePostgresBackup).toHaveBeenCalledTimes(1);
+
+	const changedStream = await caller.restoreBackupWithLogs({
+		...input,
+		backupFile: "other-postgres.sql.gz",
+	});
+	await expect(changedStream[Symbol.asyncIterator]().next()).rejects.toThrow(
+		"already used for a different request",
+	);
+	expect(mocks.restorePostgresBackup).toHaveBeenCalledTimes(1);
+
+	const nextStream = await caller.restoreBackupWithLogs({
+		...input,
+		operationId: "00000000-0000-4000-8000-000000000004",
+		backupFile: "other-postgres.sql.gz",
+	});
+	const nextIterator = nextStream[Symbol.asyncIterator]();
+	await expect(nextIterator.next()).resolves.toEqual({
+		done: false,
 		value: "restore started",
 	});
 	expect(mocks.restorePostgresBackup).toHaveBeenCalledTimes(2);
 	finishRestore?.();
-	await expect(thirdIterator.next()).resolves.toEqual({
+	await expect(nextIterator.next()).resolves.toEqual({
+		done: false,
+		value: "restore completed",
+	});
+	await expect(nextIterator.next()).resolves.toEqual({
 		done: true,
 		value: undefined,
 	});
