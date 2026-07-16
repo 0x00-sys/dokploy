@@ -75,6 +75,15 @@ describe("getPartition / getGroup", () => {
 		).toBe("build-server");
 	});
 
+	it("partitions preview builds by their dedicated build server", () => {
+		expect(
+			getPartition({
+				...previewJob("a", "preview-1", "runtime-server"),
+				buildServerId: "build-server",
+			}),
+		).toBe("build-server");
+	});
+
 	it("groups applications and compose by their id", () => {
 		expect(getGroup(appJob("a"))).toBe("application:a");
 		expect(getGroup(composeJob("c"))).toBe("compose:c");

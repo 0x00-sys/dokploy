@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => {
 		execAsync: vi.fn(),
 		execAsyncRemote: vi.fn(),
 		findApplicationById: vi.fn(),
+		findPreviewDeploymentById: vi.fn(),
 		findServerById: vi.fn(),
 		removeRollbackById: vi.fn(),
 	};
@@ -51,6 +52,11 @@ vi.mock("@dokploy/server/services/server", () => ({
 	findServerById: mocks.findServerById,
 }));
 
+vi.mock("@dokploy/server/services/preview-deployment", () => ({
+	findPreviewDeploymentById: mocks.findPreviewDeploymentById,
+	updatePreviewDeployment: vi.fn(),
+}));
+
 vi.mock("@dokploy/server/services/rollbacks", () => ({
 	removeRollbackById: mocks.removeRollbackById,
 }));
@@ -60,7 +66,11 @@ vi.mock("@dokploy/server/utils/process/execAsync", () => ({
 	execAsyncRemote: mocks.execAsyncRemote,
 }));
 
-import { createDeployment } from "@dokploy/server/services/deployment";
+import {
+	createDeployment,
+	createDeploymentPreview,
+	removeDeploymentsByPreviewDeploymentId,
+} from "@dokploy/server/services/deployment";
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -72,6 +82,14 @@ beforeEach(() => {
 		buildServerId: "build-server",
 	});
 	mocks.findServerById.mockResolvedValue({ serverId: "build-server" });
+	mocks.findPreviewDeploymentById.mockResolvedValue({
+		previewDeploymentId: "preview-1",
+		appName: "preview-app",
+		application: {
+			serverId: "runtime-server",
+			buildServerId: "build-server",
+		},
+	});
 	mocks.execAsyncRemote.mockResolvedValue({ stdout: "", stderr: "" });
 	mocks.db.query.deployments.findMany.mockResolvedValue(
 		Array.from({ length: 11 }, (_, index) => ({
@@ -155,6 +173,48 @@ it("records the runtime server when it owns the deployment log", async () => {
 		expect.objectContaining({
 			serverId: "runtime-server",
 		}),
+	);
+});
+
+it("stores preview deployment logs on the dedicated build server", async () => {
+	await createDeploymentPreview({
+		previewDeploymentId: "preview-1",
+		title: "Preview deployment",
+		description: "",
+	});
+
+	const initializeCall = mocks.execAsyncRemote.mock.calls.find(([, command]) =>
+		command.includes("Initializing deployment"),
+	);
+	const cleanupCall = mocks.execAsyncRemote.mock.calls.find(([, command]) =>
+		command.includes("rm -rf"),
+	);
+	expect(mocks.findServerById).toHaveBeenCalledWith("build-server");
+	expect(initializeCall?.[0]).toBe("build-server");
+	expect(cleanupCall?.[0]).toBe("build-server");
+	expect(mocks.insertChain.values).toHaveBeenCalledWith(
+		expect.objectContaining({ buildServerId: "build-server" }),
+	);
+	expect(mocks.insertChain.values.mock.calls.at(-1)?.[0]).not.toHaveProperty(
+		"serverId",
+	);
+});
+
+it("removes preview logs from build and legacy runtime servers", async () => {
+	await removeDeploymentsByPreviewDeploymentId(
+		{
+			previewDeploymentId: "preview-1",
+			appName: "preview-app",
+		} as never,
+		"build-server",
+		"runtime-server",
+	);
+
+	expect(mocks.execAsyncRemote.mock.calls).toEqual(
+		expect.arrayContaining([
+			["build-server", expect.stringContaining("/logs/preview-app")],
+			["runtime-server", expect.stringContaining("/logs/preview-app")],
+		]),
 	);
 });
 

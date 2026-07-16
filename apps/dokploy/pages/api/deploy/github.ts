@@ -526,6 +526,7 @@ export default async function handler(
 					server: !!app.serverId,
 					previewDeploymentId,
 					serverId: app.serverId ?? undefined,
+					buildServerId: app.buildServerId ?? undefined,
 				};
 
 				if (previewDeploymentId) {

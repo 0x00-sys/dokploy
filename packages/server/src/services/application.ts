@@ -359,6 +359,7 @@ export const deployPreviewApplication = async ({
 	previewDeploymentId: string;
 }) => {
 	const application = await findApplicationById(applicationId);
+	const buildServerId = application.buildServerId || application.serverId;
 
 	const deployment = await createDeploymentPreview({
 		title: titleLog,
@@ -417,7 +418,9 @@ export const deployPreviewApplication = async ({
 		application.buildArgs = `${application.previewBuildArgs}\nDOKPLOY_DEPLOY_URL=${previewDeployment?.domain?.host}`;
 		application.buildSecrets = `${application.previewBuildSecrets}\nDOKPLOY_DEPLOY_URL=${previewDeployment?.domain?.host}`;
 		application.rollbackActive = false;
-		application.buildRegistry = null;
+		if (!application.buildServerId || buildServerId === application.serverId) {
+			application.buildRegistry = null;
+		}
 		application.rollbackRegistry = null;
 		application.registry = null;
 
@@ -427,12 +430,13 @@ export const deployPreviewApplication = async ({
 				...application,
 				appName: previewDeployment.appName,
 				branch: previewDeployment.branch,
+				serverId: buildServerId,
 			});
 			command += await getBuildCommand(application);
 
 			const commandWithLog = `(${command}) >> ${deployment.logPath} 2>&1`;
-			if (application.serverId) {
-				await execAsyncRemote(application.serverId, commandWithLog);
+			if (buildServerId) {
+				await execAsyncRemote(buildServerId, commandWithLog);
 			} else {
 				await execAsync(commandWithLog);
 			}
@@ -488,6 +492,7 @@ export const rebuildPreviewApplication = async ({
 	previewDeploymentId: string;
 }) => {
 	const application = await findApplicationById(applicationId);
+	const serverId = application.buildServerId || application.serverId;
 	const previewDeployment =
 		await findPreviewDeploymentById(previewDeploymentId);
 
@@ -545,11 +550,12 @@ export const rebuildPreviewApplication = async ({
 		application.buildArgs = `${application.previewBuildArgs}\nDOKPLOY_DEPLOY_URL=${previewDeployment?.domain?.host}`;
 		application.buildSecrets = `${application.previewBuildSecrets}\nDOKPLOY_DEPLOY_URL=${previewDeployment?.domain?.host}`;
 		application.rollbackActive = false;
-		application.buildRegistry = null;
+		if (!application.buildServerId || serverId === application.serverId) {
+			application.buildRegistry = null;
+		}
 		application.rollbackRegistry = null;
 		application.registry = null;
 
-		const serverId = application.serverId;
 		let command = "set -e;";
 		// Only rebuild, don't clone repository
 		command += await getBuildCommand(application);
@@ -594,7 +600,6 @@ export const rebuildPreviewApplication = async ({
 		}
 
 		command += `echo "\nError occurred ❌, check the logs for details." >> ${deployment.logPath};`;
-		const serverId = application.serverId;
 		if (serverId) {
 			await execAsyncRemote(serverId, command);
 		} else {
