@@ -6,7 +6,7 @@ import {
 	schedules,
 	updateScheduleSchema,
 } from "@dokploy/server/db/schema/schedule";
-import { runCommand } from "@dokploy/server/index";
+import { runCommand, ScheduleRunError } from "@dokploy/server/index";
 import {
 	checkPermission,
 	checkServicePermissionAndAccess,
@@ -435,14 +435,17 @@ export const scheduleRouter = createTRPCRouter({
 				}
 			}
 			try {
-				await runCommand(input.scheduleId);
+				const result = await runCommand(input.scheduleId);
 				await audit(ctx, {
 					action: "run",
 					resourceType: "schedule",
 					resourceId: input.scheduleId,
 				});
-				return true;
+				return result;
 			} catch (error) {
+				if (error instanceof ScheduleRunError) {
+					return error.result;
+				}
 				throw new TRPCError({
 					code: "INTERNAL_SERVER_ERROR",
 					message:

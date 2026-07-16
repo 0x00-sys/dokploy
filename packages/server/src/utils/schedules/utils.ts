@@ -13,6 +13,54 @@ import { getComposeContainer, getServiceContainer } from "../docker/utils";
 import { execAsyncRemote } from "../process/execAsync";
 import { spawnAsync } from "../process/spawnAsync";
 
+export type ScheduleRunResult = {
+	scheduleId: string;
+	deploymentId: string;
+	status: "done" | "error";
+	message?: string;
+	warning?: string;
+};
+
+export class ScheduleRunError extends Error {
+	readonly result: ScheduleRunResult;
+
+	constructor(
+		scheduleId: string,
+		deploymentId: string,
+		cause: unknown,
+		warning?: string,
+	) {
+		const message =
+			cause instanceof Error ? cause.message : "Schedule run failed";
+		super(message, { cause });
+		this.name = "ScheduleRunError";
+		this.result = {
+			scheduleId,
+			deploymentId,
+			status: "error",
+			message,
+			...(warning ? { warning } : {}),
+		};
+	}
+}
+
+const persistScheduleRunStatus = async (
+	deploymentId: string,
+	status: "done" | "error",
+) => {
+	try {
+		await updateDeploymentStatus(deploymentId, status);
+	} catch (error) {
+		console.error(
+			`Failed to persist ${status} status for schedule deployment ${deploymentId}`,
+			error,
+		);
+		return status === "done"
+			? "Command completed, but its deployment status could not be saved."
+			: "Command failed, but its deployment status could not be saved.";
+	}
+};
+
 export const scheduleJob = (schedule: Schedule) => {
 	const { cronExpression, scheduleId, timezone } = schedule;
 
@@ -54,25 +102,32 @@ export const runCommand = async (scheduleId: string) => {
 		description: "Schedule",
 	});
 
-	if (scheduleType === "application" || scheduleType === "compose") {
-		let containerId = "";
-		let serverId = "";
-		if (scheduleType === "application" && application) {
-			const container = await getServiceContainer(
-				application.appName,
-				application.serverId,
-			);
-			containerId = container?.Id || "";
-			serverId = application.serverId || "";
-		}
-		if (scheduleType === "compose" && compose) {
-			const container = await getComposeContainer(compose, serviceName || "");
-			containerId = container?.Id || "";
-			serverId = compose.serverId || "";
-		}
+	try {
+		if (scheduleType === "application" || scheduleType === "compose") {
+			let containerId = "";
+			let serverId = "";
+			if (scheduleType === "application" && application) {
+				const container = await getServiceContainer(
+					application.appName,
+					application.serverId,
+				);
+				containerId = container?.Id || "";
+				serverId = application.serverId || "";
+			}
+			if (scheduleType === "compose" && compose) {
+				const container = await getComposeContainer(compose, serviceName || "");
+				containerId = container?.Id || "";
+				serverId = compose.serverId || "";
+			}
+			if (!containerId) {
+				throw new Error(
+					scheduleType === "compose"
+						? `No running container found for compose service "${serviceName || "unknown"}"`
+						: "No running container found for this application",
+				);
+			}
 
-		if (serverId) {
-			try {
+			if (serverId) {
 				await execAsyncRemote(
 					serverId,
 					`
@@ -85,79 +140,71 @@ export const runCommand = async (scheduleId: string) => {
 					echo "✅ Command executed successfully" >> ${deployment.logPath};
 					`,
 				);
-			} catch (error) {
-				await updateDeploymentStatus(deployment.deploymentId, "error");
-				throw error;
-			}
-		} else {
-			const writeStream = createWriteStream(deployment.logPath, { flags: "a" });
+			} else {
+				const writeStream = createWriteStream(deployment.logPath, {
+					flags: "a",
+				});
 
-			try {
-				if (IS_CLOUD) {
+				try {
+					if (IS_CLOUD) {
+						throw new Error(
+							"This feature is not available in the cloud version.",
+						);
+					}
 					writeStream.write(
-						"This feature is not available in the cloud version.",
+						`docker exec ${containerId} ${shellType} -c ${command}\n`,
 					);
-					return;
+					await spawnAsync(
+						"docker",
+						["exec", containerId, shellType, "-c", command],
+						(data) => {
+							if (writeStream.writable) {
+								writeStream.write(data);
+							}
+						},
+					);
+
+					writeStream.write("✅ Command executed successfully\n");
+				} catch (error) {
+					writeStream.write("❌ Command failed\n");
+					writeStream.write(
+						error instanceof Error ? error.message : "Unknown error",
+					);
+					throw error;
+				} finally {
+					writeStream.end();
 				}
-				writeStream.write(
-					`docker exec ${containerId} ${shellType} -c ${command}\n`,
-				);
+			}
+		} else if (scheduleType === "dokploy-server") {
+			const writeStream = createWriteStream(deployment.logPath, { flags: "a" });
+			try {
+				const { SCHEDULES_PATH } = paths();
+				const fullPath = path.join(SCHEDULES_PATH, appName || "");
+
 				await spawnAsync(
-					"docker",
-					["exec", containerId, shellType, "-c", command],
-					(data) => {
+					"bash",
+					["-c", "./script.sh"],
+					async (data) => {
 						if (writeStream.writable) {
+							// we need to extract the PID and Schedule ID from the data
+							const pid = data?.match(/PID: (\d+)/)?.[1];
+
+							if (pid) {
+								await updateDeployment(deployment.deploymentId, {
+									pid,
+								});
+							}
 							writeStream.write(data);
 						}
 					},
+					{
+						cwd: fullPath,
+					},
 				);
-
-				writeStream.write("✅ Command executed successfully\n");
-			} catch (error) {
-				writeStream.write("❌ Command failed\n");
-				writeStream.write(
-					error instanceof Error ? error.message : "Unknown error",
-				);
-				await updateDeploymentStatus(deployment.deploymentId, "error");
-				throw error;
 			} finally {
 				writeStream.end();
 			}
-		}
-	} else if (scheduleType === "dokploy-server") {
-		const writeStream = createWriteStream(deployment.logPath, { flags: "a" });
-		try {
-			const { SCHEDULES_PATH } = paths();
-			const fullPath = path.join(SCHEDULES_PATH, appName || "");
-
-			await spawnAsync(
-				"bash",
-				["-c", "./script.sh"],
-				async (data) => {
-					if (writeStream.writable) {
-						// we need to extract the PID and Schedule ID from the data
-						const pid = data?.match(/PID: (\d+)/)?.[1];
-
-						if (pid) {
-							await updateDeployment(deployment.deploymentId, {
-								pid,
-							});
-						}
-						writeStream.write(data);
-					}
-				},
-				{
-					cwd: fullPath,
-				},
-			);
-		} catch (error) {
-			await updateDeploymentStatus(deployment.deploymentId, "error");
-			throw error;
-		} finally {
-			writeStream.end();
-		}
-	} else if (scheduleType === "server") {
-		try {
+		} else if (scheduleType === "server") {
 			const { SCHEDULES_PATH } = paths(true);
 			const fullPath = path.join(SCHEDULES_PATH, appName || "");
 			const command = `
@@ -178,10 +225,28 @@ export const runCommand = async (scheduleId: string) => {
 					});
 				}
 			});
-		} catch (error) {
-			await updateDeploymentStatus(deployment.deploymentId, "error");
-			throw error;
 		}
+	} catch (error) {
+		const warning = await persistScheduleRunStatus(
+			deployment.deploymentId,
+			"error",
+		);
+		throw new ScheduleRunError(
+			scheduleId,
+			deployment.deploymentId,
+			error,
+			warning,
+		);
 	}
-	await updateDeploymentStatus(deployment.deploymentId, "done");
+
+	const warning = await persistScheduleRunStatus(
+		deployment.deploymentId,
+		"done",
+	);
+	return {
+		scheduleId,
+		deploymentId: deployment.deploymentId,
+		status: "done",
+		...(warning ? { warning } : {}),
+	} satisfies ScheduleRunResult;
 };
