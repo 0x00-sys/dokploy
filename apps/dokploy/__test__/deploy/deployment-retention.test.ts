@@ -67,6 +67,7 @@ vi.mock("@dokploy/server/utils/process/execAsync", () => ({
 }));
 
 import {
+	clearOldDeployments,
 	createDeployment,
 	createDeploymentPreview,
 	removeDeploymentsByPreviewDeploymentId,
@@ -113,6 +114,31 @@ it("removes retained deployment logs from the dedicated build server", async () 
 
 	expect(cleanupCall?.[0]).toBe("build-server");
 	expect(cleanupCall?.[1]).toContain("rm -rf /var/lib/dokploy/logs/app-10.log");
+});
+
+it("keeps deployment records when batched remote log cleanup fails", async () => {
+	mocks.db.query.deployments.findMany.mockResolvedValue([
+		{
+			deploymentId: "active-deployment",
+			logPath: "/var/lib/dokploy/logs/active.log",
+			status: "done",
+			rollbackId: null,
+		},
+		{
+			deploymentId: "old-deployment",
+			logPath: "/var/lib/dokploy/logs/old.log",
+			status: "error",
+			rollbackId: "rollback-1",
+		},
+	]);
+	mocks.execAsyncRemote.mockRejectedValue(new Error("server unavailable"));
+
+	await expect(
+		clearOldDeployments("application-1", "application", "build-server"),
+	).rejects.toThrow("server unavailable");
+
+	expect(mocks.removeRollbackById).not.toHaveBeenCalled();
+	expect(mocks.db.delete).not.toHaveBeenCalled();
 });
 
 it("falls back to the runtime server when no build server is configured", async () => {
@@ -312,7 +338,30 @@ it("groups retained logs by the build server that created them", async () => {
 	);
 });
 
-it("keeps a log when its deployment record could not be deleted", async () => {
+it("chains batched log cleanup with fail-fast semantics", async () => {
+	mocks.db.query.deployments.findMany.mockResolvedValue(
+		Array.from({ length: 11 }, (_, index) => ({
+			deploymentId: `deployment-${index}`,
+			logPath: `/var/lib/dokploy/logs/app-${index}.log`,
+			rollbackId: null,
+		})),
+	);
+
+	await createDeployment({
+		applicationId: "application-1",
+		title: "Deployment",
+		description: "",
+	});
+
+	const cleanupCall = mocks.execAsyncRemote.mock.calls.find(([, command]) =>
+		command.includes("rm -rf"),
+	);
+	expect(cleanupCall?.[1]).toBe(
+		"rm -rf /var/lib/dokploy/logs/app-9.log && rm -rf /var/lib/dokploy/logs/app-10.log",
+	);
+});
+
+it("keeps a deployment record retryable when its deletion fails", async () => {
 	mocks.db.query.deployments.findMany.mockResolvedValue(
 		Array.from({ length: 10 }, (_, index) => ({
 			deploymentId: `deployment-${index}`,
@@ -338,5 +387,6 @@ it("keeps a log when its deployment record could not be deleted", async () => {
 	const cleanupCalls = mocks.execAsyncRemote.mock.calls.filter(([, command]) =>
 		command.includes("rm -"),
 	);
-	expect(cleanupCalls).toHaveLength(0);
+	expect(cleanupCalls).toHaveLength(1);
+	expect(mocks.db.delete).toHaveBeenCalled();
 });

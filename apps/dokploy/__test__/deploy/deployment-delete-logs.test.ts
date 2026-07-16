@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
 			delete: vi.fn(() => deleteChain),
 			select: vi.fn(() => selectChain),
 			query: {
+				deployments: { findFirst: vi.fn() },
 				ssoProvider: { findMany: vi.fn().mockResolvedValue([]) },
 				webServerSettings: { findFirst: vi.fn().mockResolvedValue({}) },
 			},
@@ -76,6 +77,12 @@ beforeEach(() => {
 	mocks.checkServicePermissionAndAccess.mockResolvedValue(undefined);
 	mocks.execAsync.mockResolvedValue({ stdout: "", stderr: "" });
 	mocks.execAsyncRemote.mockResolvedValue({ stdout: "", stderr: "" });
+	mocks.db.query.deployments.findFirst.mockResolvedValue({
+		deploymentId: "deployment-1",
+		logPath: "/var/lib/dokploy/logs/app/deployment.log",
+		serverId: null,
+		buildServerId: null,
+	});
 	mocks.findDeploymentById.mockResolvedValue({
 		deploymentId: "deployment-1",
 		applicationId: null,
@@ -119,6 +126,16 @@ it("deletes application deployment logs from the dedicated build server", async 
 		"rm -f /var/lib/dokploy/logs/app/deployment.log;",
 	);
 	expect(mocks.execAsync).not.toHaveBeenCalled();
+});
+
+it("keeps the deployment record when remote log cleanup fails", async () => {
+	mocks.execAsyncRemote.mockRejectedValue(new Error("server unavailable"));
+
+	await expect(
+		caller.removeDeployment({ deploymentId: "deployment-1" }),
+	).rejects.toThrow("server unavailable");
+
+	expect(mocks.db.delete).not.toHaveBeenCalled();
 });
 
 it("checks service access before deleting compose schedule logs", async () => {
