@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useCentralizedDeployments } from "@/hooks/use-centralized-deployments";
 import { api } from "@/utils/api";
 
 type DeploymentStatus = "idle" | "running" | "done" | "error";
@@ -98,13 +99,7 @@ export const ShowHome = () => {
 	const { data: homeStats } = api.project.homeStats.useQuery();
 	const { data: permissions } = api.user.getPermissions.useQuery();
 	const canReadDeployments = !!permissions?.deployment.read;
-	const { data: deployments } = api.deployment.allCentralized.useQuery(
-		undefined,
-		{
-			enabled: canReadDeployments,
-			refetchInterval: 10000,
-		},
-	);
+	const { data: deployments } = useCentralizedDeployments(canReadDeployments);
 
 	const firstName = auth?.user?.firstName?.trim();
 
