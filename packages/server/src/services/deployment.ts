@@ -44,37 +44,115 @@ import { findVolumeBackupById } from "./volume-backups";
 
 export type ServicePath = { href: string | null; label: string };
 
+export async function resolveServicePaths(
+	orgId: string,
+	data: Record<string, unknown>[],
+): Promise<ServicePath[]> {
+	const applicationIds = [
+		...new Set(
+			data.flatMap((item) =>
+				typeof item.applicationId === "string" ? [item.applicationId] : [],
+			),
+		),
+	];
+	const composeIds = [
+		...new Set(
+			data.flatMap((item) =>
+				typeof item.composeId === "string" ? [item.composeId] : [],
+			),
+		),
+	];
+
+	const [applicationRows, composeRows] = await Promise.all([
+		applicationIds.length === 0
+			? Promise.resolve([])
+			: db
+					.select({
+						applicationId: applications.applicationId,
+						environmentId: environments.environmentId,
+						projectId: projects.projectId,
+						organizationId: projects.organizationId,
+					})
+					.from(applications)
+					.innerJoin(
+						environments,
+						eq(applications.environmentId, environments.environmentId),
+					)
+					.innerJoin(projects, eq(environments.projectId, projects.projectId))
+					.where(inArray(applications.applicationId, applicationIds))
+					.catch(() => []),
+		composeIds.length === 0
+			? Promise.resolve([])
+			: db
+					.select({
+						composeId: compose.composeId,
+						environmentId: environments.environmentId,
+						projectId: projects.projectId,
+						organizationId: projects.organizationId,
+					})
+					.from(compose)
+					.innerJoin(
+						environments,
+						eq(compose.environmentId, environments.environmentId),
+					)
+					.innerJoin(projects, eq(environments.projectId, projects.projectId))
+					.where(inArray(compose.composeId, composeIds))
+					.catch(() => []),
+	]);
+
+	const applicationsById = new Map(
+		applicationRows.map((application) => [
+			application.applicationId,
+			application,
+		]),
+	);
+	const composeById = new Map(
+		composeRows.map((composeRow) => [composeRow.composeId, composeRow]),
+	);
+
+	return data.map((item) => {
+		const applicationId =
+			typeof item.applicationId === "string" ? item.applicationId : undefined;
+		const composeId =
+			typeof item.composeId === "string" ? item.composeId : undefined;
+		if (item.applicationId) {
+			if (!applicationId) return { href: null, label: "—" };
+			const application = applicationsById.get(applicationId);
+			if (!application) return { href: null, label: "—" };
+			if (application.organizationId !== orgId) {
+				return { href: null, label: "Application" };
+			}
+			return {
+				href: `/dashboard/project/${application.projectId}/environment/${application.environmentId}/services/application/${application.applicationId}`,
+				label: "Application",
+			};
+		}
+		if (item.composeId) {
+			if (!composeId) return { href: null, label: "—" };
+			const composeRow = composeById.get(composeId);
+			if (!composeRow) return { href: null, label: "—" };
+			if (composeRow.organizationId !== orgId) {
+				return { href: null, label: "Compose" };
+			}
+			return {
+				href: `/dashboard/project/${composeRow.projectId}/environment/${composeRow.environmentId}/services/compose/${composeRow.composeId}`,
+				label: "Compose",
+			};
+		}
+		return { href: null, label: "—" };
+	});
+}
+
 export async function resolveServicePath(
 	orgId: string,
 	data: Record<string, unknown>,
 ): Promise<ServicePath> {
-	try {
-		const applicationId = data?.applicationId as string | undefined;
-		const composeId = data?.composeId as string | undefined;
-		if (applicationId) {
-			const app = await findApplicationById(applicationId);
-			if (app.environment.project.organizationId !== orgId) {
-				return { href: null, label: "Application" };
-			}
-			return {
-				href: `/dashboard/project/${app.environment.project.projectId}/environment/${app.environment.environmentId}/services/application/${app.applicationId}`,
-				label: "Application",
-			};
+	return (
+		(await resolveServicePaths(orgId, [data]))[0] ?? {
+			href: null,
+			label: "—",
 		}
-		if (composeId) {
-			const comp = await findComposeById(composeId);
-			if (comp.environment.project.organizationId !== orgId) {
-				return { href: null, label: "Compose" };
-			}
-			return {
-				href: `/dashboard/project/${comp.environment.project.projectId}/environment/${comp.environment.environmentId}/services/compose/${comp.composeId}`,
-				label: "Compose",
-			};
-		}
-	} catch {
-		// not found or unauthorized
-	}
-	return { href: null, label: "—" };
+	);
 }
 
 export type Deployment = typeof deployments.$inferSelect;
