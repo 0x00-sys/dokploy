@@ -2,6 +2,7 @@ import { standardSchemaResolver as zodResolver } from "@hookform/resolvers/stand
 import copy from "copy-to-clipboard";
 import debounce from "lodash/debounce";
 import { CheckIcon, ChevronsUpDown, Copy, RotateCcw } from "lucide-react";
+import { nanoid } from "nanoid";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -42,7 +43,7 @@ import {
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { api } from "@/utils/api";
+import { api, type RouterInputs } from "@/utils/api";
 import { formatBytes } from "../../database/backups/restore-backup";
 import { type LogLine, parseLogs } from "../../docker/logs/utils";
 
@@ -107,9 +108,13 @@ export const RestoreVolumeBackups = ({ id, type, serverId }: Props) => {
 	const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 	const [filteredLogs, setFilteredLogs] = useState<LogLine[]>([]);
 	const [isDeploying, setIsDeploying] = useState(false);
+	const [restoreRequest, setRestoreRequest] = useState<
+		RouterInputs["volumeBackups"]["restoreVolumeBackupWithLogs"] | null
+	>(null);
 
 	api.volumeBackups.restoreVolumeBackupWithLogs.useSubscription(
-		{
+		restoreRequest ?? {
+			operationId: "disabled-restore-operation",
 			id,
 			serviceType: type,
 			serverId,
@@ -118,7 +123,7 @@ export const RestoreVolumeBackups = ({ id, type, serverId }: Props) => {
 			backupFileName: backupFile,
 		},
 		{
-			enabled: isDeploying,
+			enabled: isDeploying && restoreRequest !== null,
 			onData(log) {
 				if (!isDrawerOpen) {
 					setIsDrawerOpen(true);
@@ -135,12 +140,22 @@ export const RestoreVolumeBackups = ({ id, type, serverId }: Props) => {
 			},
 			onError(error) {
 				console.error("Restore logs error:", error);
+				toast.error(error.message);
 				setIsDeploying(false);
 			},
 		},
 	);
 
-	const onSubmit = async () => {
+	const onSubmit = async (data: z.infer<typeof RestoreBackupSchema>) => {
+		setRestoreRequest({
+			operationId: nanoid(),
+			id,
+			serviceType: type,
+			serverId,
+			destinationId: data.destinationId,
+			volumeName: data.volumeName,
+			backupFileName: data.backupFile,
+		});
 		setIsDeploying(true);
 	};
 

@@ -25,6 +25,7 @@ vi.mock("@dokploy/server/services/permission", async (importOriginal) => ({
 import { volumeBackupsRouter } from "@/server/api/routers/volume-backups";
 
 const input = {
+	operationId: "00000000-0000-4000-8000-000000000021",
 	backupFileName: "volume.tar.gz",
 	destinationId: "destination-1",
 	volumeName: "data",
@@ -48,6 +49,16 @@ beforeEach(() => {
 		destinationId: "destination-1",
 		organizationId: "org-1",
 	});
+});
+
+it("rejects oversized volume restore operation IDs", async () => {
+	await expect(
+		caller.restoreVolumeBackupWithLogs({
+			...input,
+			operationId: "a".repeat(65),
+		}),
+	).rejects.toMatchObject({ code: "BAD_REQUEST" });
+	expect(mocks.findDestinationById).not.toHaveBeenCalled();
 });
 
 it("rejects volume restores for services the member cannot access", async () => {
