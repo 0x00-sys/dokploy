@@ -126,6 +126,8 @@ export const ComposeFreeMonitoring = ({
 					<ContainerFreeMonitoring
 						appName={containerAppName}
 						appType={appType}
+						containerId={containerId}
+						projectName={appName}
 						serverId={serverId}
 						monitoringTarget={{
 							serviceType: "compose",

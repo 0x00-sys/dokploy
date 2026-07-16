@@ -44,6 +44,8 @@ const defaultData = {
 interface Props {
 	appName: string;
 	appType?: "application" | "stack" | "docker-compose";
+	containerId?: string;
+	projectName?: string;
 	serverId?: string;
 	monitoringTarget:
 		| { serviceType: "dokploy" }
@@ -133,6 +135,8 @@ export const convertMemoryToBytes = (
 export const ContainerFreeMonitoring = ({
 	appName,
 	appType = "application",
+	containerId,
+	projectName,
 	serverId,
 	monitoringTarget,
 }: Props) => {
@@ -185,6 +189,8 @@ export const ContainerFreeMonitoring = ({
 	useEffect(() => {
 		const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 		const params = new URLSearchParams({ appName, appType });
+		if (containerId) params.set("containerId", containerId);
+		if (projectName) params.set("projectName", projectName);
 		if (serverId) params.set("serverId", serverId);
 		const wsUrl = `${protocol}//${window.location.host}/listen-docker-stats-monitoring?${params}`;
 		const ws = new WebSocket(wsUrl);
@@ -218,7 +224,7 @@ export const ContainerFreeMonitoring = ({
 		};
 
 		return () => ws.close();
-	}, [appName, appType, serverId]);
+	}, [appName, appType, containerId, projectName, serverId]);
 
 	return (
 		<div className="rounded-xl bg-background flex flex-col gap-4">

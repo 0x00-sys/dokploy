@@ -55,10 +55,20 @@ export const setupDockerStatsMonitoringSocketServer = (
 		}
 		const appName = url.searchParams.get("appName");
 		const serverId = url.searchParams.get("serverId");
-		const appType = (url.searchParams.get("appType") || "application") as
-			| "application"
-			| "stack"
-			| "docker-compose";
+		const containerId = url.searchParams.get("containerId");
+		const projectName = url.searchParams.get("projectName");
+		const appTypeParam = url.searchParams.get("appType") || "application";
+		if (
+			appTypeParam !== "application" &&
+			appTypeParam !== "stack" &&
+			appTypeParam !== "docker-compose"
+		) {
+			ws.close(4000, "Invalid app type");
+			return;
+		}
+		const appType = appTypeParam;
+		const isComposeMonitoring =
+			appType === "stack" || appType === "docker-compose";
 		const { user, session } = await validateRequest(req);
 
 		if (!appName) {
@@ -67,6 +77,17 @@ export const setupDockerStatsMonitoringSocketServer = (
 		}
 		if (!isValidContainerId(appName)) {
 			ws.close(4000, "Invalid app name");
+			return;
+		}
+		if (
+			(containerId && !isValidContainerId(containerId)) ||
+			(projectName && !isValidContainerId(projectName))
+		) {
+			ws.close(4000, "Invalid monitoring target");
+			return;
+		}
+		if (isComposeMonitoring && (!containerId || !projectName)) {
+			ws.close(4000, "Invalid compose monitoring target");
 			return;
 		}
 
@@ -86,7 +107,9 @@ export const setupDockerStatsMonitoringSocketServer = (
 			session.activeOrganizationId,
 			serverId,
 			appType,
-			appName,
+			isComposeMonitoring ? undefined : appName,
+			isComposeMonitoring ? projectName : undefined,
+			isComposeMonitoring ? containerId : undefined,
 		]);
 		let poller = activePollers.get(pollerKey);
 		if (!poller) {
@@ -115,7 +138,7 @@ export const setupDockerStatsMonitoringSocketServer = (
 				pollingState.isPolling = true;
 				try {
 					// Special case: when monitoring "dokploy", get host system stats instead of container stats
-					if (appName === "dokploy") {
+					if (!isComposeMonitoring && appName === "dokploy") {
 						const stat = await getHostSystemStats();
 						const data = await recordAdvancedStats(stat, appName);
 						sendToClients(JSON.stringify({ data }));
@@ -124,14 +147,15 @@ export const setupDockerStatsMonitoringSocketServer = (
 
 					const filter = {
 						status: ["running"],
+						...(isComposeMonitoring && containerId && { id: [containerId] }),
 						...(appType === "application" && {
 							label: [`com.docker.swarm.service.name=${appName}`],
 						}),
 						...(appType === "stack" && {
-							label: [`com.docker.stack.namespace=${appName}`],
+							label: [`com.docker.stack.namespace=${projectName}`],
 						}),
 						...(appType === "docker-compose" && {
-							label: [`com.docker.compose.project=${appName}`],
+							label: [`com.docker.compose.project=${projectName}`],
 						}),
 					};
 
@@ -143,11 +167,15 @@ export const setupDockerStatsMonitoringSocketServer = (
 							appType === "application"
 								? `label=com.docker.swarm.service.name=${appName}`
 								: appType === "stack"
-									? `label=com.docker.stack.namespace=${appName}`
-									: `label=com.docker.compose.project=${appName}`;
+									? `label=com.docker.stack.namespace=${projectName}`
+									: `label=com.docker.compose.project=${projectName}`;
+						const containerFilter =
+							isComposeMonitoring && containerId
+								? ` --filter "id=${containerId}"`
+								: "";
 						const result = await execAsyncRemote(
 							serverId,
-							`container_id=$(docker ps -q --filter "${remoteFilter}" | head -1); if [ -n "$container_id" ]; then docker stats "$container_id" --no-stream --format ${statsFormat}; fi`,
+							`container_id=$(docker ps -q${containerFilter} --filter "${remoteFilter}" | head -1); if [ -n "$container_id" ]; then docker stats "$container_id" --no-stream --format ${statsFormat}; fi`,
 						);
 						stdout = result.stdout;
 						stderr = result.stderr;
@@ -173,7 +201,12 @@ export const setupDockerStatsMonitoringSocketServer = (
 						return;
 					}
 					const stat = JSON.parse(stdout);
-					const data = await recordAdvancedStats(stat, appName);
+					const monitoringName = isComposeMonitoring ? stat.Name : appName;
+					if (!monitoringName || !isValidContainerId(monitoringName)) {
+						closeClients(4000, "Invalid container name");
+						return;
+					}
+					const data = await recordAdvancedStats(stat, monitoringName);
 					sendToClients(JSON.stringify({ data }));
 				} catch (error) {
 					const message =
