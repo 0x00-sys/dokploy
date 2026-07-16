@@ -1,6 +1,5 @@
 import { standardSchemaResolver as zodResolver } from "@hookform/resolvers/standard-schema";
 import copy from "copy-to-clipboard";
-import debounce from "lodash/debounce";
 import {
 	CheckIcon,
 	ChevronsUpDown,
@@ -63,6 +62,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { api, type RouterInputs } from "@/utils/api";
+import { useDebouncedCallback } from "@/utils/hooks/use-debounce";
 import type { ServiceType } from "../../application/advanced/show-resources";
 import { type LogLine, parseLogs } from "../../docker/logs/utils";
 
@@ -205,6 +205,10 @@ export const RestoreBackup = ({
 	const [isOpen, setIsOpen] = useState(false);
 	const [search, setSearch] = useState("");
 	const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+	const debouncedSetSearchTerm = useDebouncedCallback(
+		setDebouncedSearchTerm,
+		350,
+	);
 
 	const { data: destinations = [] } = api.destination.all.useQuery();
 
@@ -230,13 +234,9 @@ export const RestoreBackup = ({
 	const currentDatabaseType = form.watch("databaseType");
 	const metadata = form.watch("metadata");
 
-	const debouncedSetSearch = debounce((value: string) => {
-		setDebouncedSearchTerm(value);
-	}, 350);
-
 	const handleSearchChange = (value: string) => {
 		setSearch(value);
-		debouncedSetSearch(value);
+		debouncedSetSearchTerm(value);
 	};
 
 	const { data: files = [], isPending } = api.backup.listBackupFiles.useQuery(
@@ -487,6 +487,7 @@ export const RestoreBackup = ({
 																	key={file.Path}
 																	onSelect={() => {
 																		form.setValue("backupFile", file.Path);
+																		debouncedSetSearchTerm.cancel();
 																		if (file.IsDir) {
 																			setSearch(`${file.Path}/`);
 																			setDebouncedSearchTerm(`${file.Path}/`);
