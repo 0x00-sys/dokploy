@@ -25,6 +25,8 @@ interface RestoreOperationOptions {
 	fingerprint: string;
 	resourceKey: string;
 	busyMessage?: string;
+	capacityMessage?: string;
+	mismatchMessage?: string;
 	run: (emit: (log: string) => void) => Promise<void>;
 }
 
@@ -72,15 +74,15 @@ export const getOrCreateRestoreOperation = ({
 	fingerprint,
 	resourceKey,
 	busyMessage = "A restore is already running for this service",
+	capacityMessage = "Too many recent restore operations; try again later",
+	mismatchMessage = "This restore operation ID was already used for a different request",
 	run,
 }: RestoreOperationOptions): RestoreOperation => {
 	const existingOperations = restoreOperationsByUser.get(scope);
 	const existingOperation = existingOperations?.get(key);
 	if (existingOperation) {
 		if (existingOperation.fingerprint !== fingerprint) {
-			throw new Error(
-				"This restore operation ID was already used for a different request",
-			);
+			throw new Error(mismatchMessage);
 		}
 		return createRestoreOperation(existingOperation);
 	}
@@ -90,7 +92,7 @@ export const getOrCreateRestoreOperation = ({
 		existingOperations &&
 		existingOperations.size >= MAX_RESTORE_OPERATIONS_PER_USER
 	) {
-		throw new Error("Too many recent restore operations; try again later");
+		throw new Error(capacityMessage);
 	}
 
 	const operations =

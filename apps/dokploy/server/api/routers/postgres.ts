@@ -35,6 +35,7 @@ import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { audit } from "@/server/api/utils/audit";
+import { createDatabaseDeployOperation } from "@/server/api/utils/database-deploy-operation";
 import {
 	apiChangePostgresStatus,
 	apiCreatePostgres,
@@ -249,39 +250,27 @@ export const postgresRouter = createTRPCRouter({
 				enabled: false,
 			},
 		})
-		.input(apiDeployPostgres)
-		.subscription(async function* ({ input, ctx, signal }) {
+		.input(
+			apiDeployPostgres.extend({
+				operationId: z
+					.string()
+					.min(16)
+					.max(64)
+					.regex(/^[A-Za-z0-9_-]+$/),
+			}),
+		)
+		.subscription(async ({ input, ctx }) => {
 			await checkServicePermissionAndAccess(ctx, input.postgresId, {
 				deployment: ["create"],
 			});
 
-			const queue: string[] = [];
-			let done = false;
-			let acceptingLogs = true;
-
-			deployPostgres(input.postgresId, (log) => {
-				if (acceptingLogs) queue.push(log);
-			})
-				.catch(() => {})
-				.finally(() => {
-					done = true;
-				});
-
-			try {
-				while (!done || queue.length > 0) {
-					if (queue.length > 0) {
-						yield queue.shift()!;
-					} else {
-						await new Promise((r) => setTimeout(r, 50));
-					}
-
-					if (signal?.aborted) {
-						return;
-					}
-				}
-			} finally {
-				acceptingLogs = false;
-			}
+			return createDatabaseDeployOperation({
+				scope: `${ctx.session.activeOrganizationId}:${ctx.user.id}`,
+				operationId: input.operationId,
+				databaseType: "postgres",
+				databaseId: input.postgresId,
+				deploy: deployPostgres,
+			});
 		}),
 
 	changeStatus: protectedProcedure

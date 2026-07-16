@@ -34,6 +34,7 @@ import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { audit } from "@/server/api/utils/audit";
+import { createDatabaseDeployOperation } from "@/server/api/utils/database-deploy-operation";
 import {
 	apiChangeMongoStatus,
 	apiCreateMongo,
@@ -241,38 +242,27 @@ export const mongoRouter = createTRPCRouter({
 				enabled: false,
 			},
 		})
-		.input(apiDeployMongo)
-		.subscription(async function* ({ input, ctx, signal }) {
+		.input(
+			apiDeployMongo.extend({
+				operationId: z
+					.string()
+					.min(16)
+					.max(64)
+					.regex(/^[A-Za-z0-9_-]+$/),
+			}),
+		)
+		.subscription(async ({ input, ctx }) => {
 			await checkServicePermissionAndAccess(ctx, input.mongoId, {
 				deployment: ["create"],
 			});
-			const queue: string[] = [];
-			let done = false;
-			let acceptingLogs = true;
 
-			deployMongo(input.mongoId, (log) => {
-				if (acceptingLogs) queue.push(log);
-			})
-				.catch(() => {})
-				.finally(() => {
-					done = true;
-				});
-
-			try {
-				while (!done || queue.length > 0) {
-					if (queue.length > 0) {
-						yield queue.shift()!;
-					} else {
-						await new Promise((r) => setTimeout(r, 50));
-					}
-
-					if (signal?.aborted) {
-						return;
-					}
-				}
-			} finally {
-				acceptingLogs = false;
-			}
+			return createDatabaseDeployOperation({
+				scope: `${ctx.session.activeOrganizationId}:${ctx.user.id}`,
+				operationId: input.operationId,
+				databaseType: "mongo",
+				databaseId: input.mongoId,
+				deploy: deployMongo,
+			});
 		}),
 
 	changeStatus: protectedProcedure
