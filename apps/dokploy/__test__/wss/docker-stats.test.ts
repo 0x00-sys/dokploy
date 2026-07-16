@@ -86,7 +86,7 @@ describe("Docker stats monitoring", () => {
 		const connection = mocks.wssHandlers.get("connection");
 		expect(connection).toBeDefined();
 		await connection?.(ws, {
-			url: "/listen-docker-stats-monitoring?appName=app&appType=docker-compose",
+			url: "/listen-docker-stats-monitoring?appName=app-web-1&appType=docker-compose&projectName=app&containerId=container-1",
 			headers: { host: "localhost" },
 		});
 
@@ -129,7 +129,7 @@ describe("Docker stats monitoring", () => {
 		await Promise.all(
 			sockets.map(({ ws }) =>
 				connection?.(ws, {
-					url: "/listen-docker-stats-monitoring?appName=app&appType=docker-compose",
+					url: "/listen-docker-stats-monitoring?appName=app-web-1&appType=docker-compose&projectName=app&containerId=container-1",
 					headers: { host: "localhost" },
 				}),
 			),
@@ -151,6 +151,39 @@ describe("Docker stats monitoring", () => {
 
 		sockets.at(-1)?.handlers.get("close")?.();
 		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("ignores Compose-only parameters in application poller identity", async () => {
+		mocks.listContainers.mockResolvedValue([
+			{ Id: "container-1", State: "running" },
+		]);
+
+		setupDockerStatsMonitoringSocketServer({ on: vi.fn() } as never);
+		const connection = mocks.wssHandlers.get("connection");
+		const sockets = ["one", "two"].map((suffix) => ({
+			on: vi.fn(),
+			send: vi.fn(),
+			close: vi.fn(),
+			suffix,
+		}));
+
+		await Promise.all(
+			sockets.map((ws) =>
+				connection?.(ws, {
+					url: `/listen-docker-stats-monitoring?appName=app&appType=application&projectName=project-${ws.suffix}&containerId=container-${ws.suffix}`,
+					headers: { host: "localhost" },
+				}),
+			),
+		);
+
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(1300);
+		await flush();
+
+		expect(mocks.listContainers).toHaveBeenCalledOnce();
+		for (const ws of sockets) {
+			expect(ws.send).toHaveBeenCalledOnce();
+		}
 	});
 
 	it("does not start polling when the socket closes during authentication", async () => {
@@ -189,6 +222,27 @@ describe("Docker stats monitoring", () => {
 		await flush();
 
 		expect(mocks.listContainers).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it.each([
+		"/listen-docker-stats-monitoring?appName=app&appType=unknown&projectName=%24%28id%29&serverId=server-1",
+		"/listen-docker-stats-monitoring?appName=app&appType=application&containerId=%24%28id%29&serverId=server-1",
+	])("rejects unsafe remote monitoring filters in %s", async (url) => {
+		setupDockerStatsMonitoringSocketServer({ on: vi.fn() } as never);
+		const ws = {
+			on: vi.fn(),
+			send: vi.fn(),
+			close: vi.fn(),
+		};
+
+		await mocks.wssHandlers.get("connection")?.(ws, {
+			url,
+			headers: { host: "localhost" },
+		});
+
+		expect(ws.close).toHaveBeenCalledWith(4000, expect.any(String));
+		expect(mocks.execAsyncRemote).not.toHaveBeenCalled();
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
@@ -286,7 +340,7 @@ describe("Docker stats monitoring", () => {
 		};
 		const connection = mocks.wssHandlers.get("connection");
 		await connection?.(ws, {
-			url: "/listen-docker-stats-monitoring?appName=app&appType=stack",
+			url: "/listen-docker-stats-monitoring?appName=app_web_1&appType=stack&projectName=app&containerId=container-1",
 			headers: { host: "localhost" },
 		});
 
@@ -296,6 +350,7 @@ describe("Docker stats monitoring", () => {
 		expect(mocks.listContainers).toHaveBeenCalledWith({
 			filters: JSON.stringify({
 				status: ["running"],
+				id: ["container-1"],
 				label: ["com.docker.stack.namespace=app"],
 			}),
 		});
@@ -321,7 +376,7 @@ describe("Docker stats monitoring", () => {
 		};
 		const connection = mocks.wssHandlers.get("connection");
 		await connection?.(ws, {
-			url: "/listen-docker-stats-monitoring?appName=app&appType=stack&serverId=server-1",
+			url: "/listen-docker-stats-monitoring?appName=app_web_1&appType=stack&projectName=app&containerId=container-1&serverId=server-1",
 			headers: { host: "localhost" },
 		});
 
@@ -331,7 +386,7 @@ describe("Docker stats monitoring", () => {
 		expect(mocks.execAsyncRemote).toHaveBeenCalledWith(
 			"server-1",
 			expect.stringMatching(
-				/docker ps .*com\.docker\.stack\.namespace=app.*docker stats/,
+				/docker ps .*id=container-1.*com\.docker\.stack\.namespace=app.*docker stats/,
 			),
 		);
 	});
@@ -354,7 +409,7 @@ describe("Docker stats monitoring", () => {
 		};
 		const connection = mocks.wssHandlers.get("connection");
 		await connection?.(ws, {
-			url: "/listen-docker-stats-monitoring?appName=app&appType=docker-compose",
+			url: "/listen-docker-stats-monitoring?appName=app-web-1&appType=docker-compose&projectName=app&containerId=container-1",
 			headers: { host: "localhost" },
 		});
 
@@ -364,9 +419,40 @@ describe("Docker stats monitoring", () => {
 		expect(mocks.listContainers).toHaveBeenCalledWith({
 			filters: JSON.stringify({
 				status: ["running"],
+				id: ["container-1"],
 				label: ["com.docker.compose.project=app"],
 			}),
 		});
+	});
+
+	it("keeps Compose targeting independent from the client history key", async () => {
+		mocks.listContainers.mockResolvedValueOnce([
+			{ Id: "container-1", State: "running" },
+		]);
+		mocks.execAsync.mockResolvedValueOnce({
+			stdout:
+				'{"BlockIO":"0B / 0B","CPUPerc":"0%","Container":"container-1","ID":"container-1","MemPerc":"0%","MemUsage":"0B / 0B","Name":"app-web-1","NetIO":"0B / 0B"}',
+			stderr: "",
+		});
+
+		setupDockerStatsMonitoringSocketServer({ on: vi.fn() } as never);
+		const ws = {
+			on: vi.fn(),
+			send: vi.fn(),
+			close: vi.fn(),
+		};
+		await mocks.wssHandlers.get("connection")?.(ws, {
+			url: "/listen-docker-stats-monitoring?appName=dokploy&appType=docker-compose&projectName=app&containerId=container-1",
+			headers: { host: "localhost" },
+		});
+
+		vi.advanceTimersByTime(1300);
+		await flush();
+
+		expect(mocks.recordAdvancedStats).toHaveBeenCalledWith(
+			expect.objectContaining({ Name: "app-web-1" }),
+			"app-web-1",
+		);
 	});
 
 	it("selects remote Compose containers by their project label", async () => {
@@ -389,7 +475,7 @@ describe("Docker stats monitoring", () => {
 		};
 		const connection = mocks.wssHandlers.get("connection");
 		await connection?.(ws, {
-			url: "/listen-docker-stats-monitoring?appName=app&appType=docker-compose&serverId=server-1",
+			url: "/listen-docker-stats-monitoring?appName=app-web-1&appType=docker-compose&projectName=app&containerId=container-1&serverId=server-1",
 			headers: { host: "localhost" },
 		});
 
@@ -399,7 +485,7 @@ describe("Docker stats monitoring", () => {
 		expect(mocks.execAsyncRemote).toHaveBeenCalledWith(
 			"server-1",
 			expect.stringMatching(
-				/docker ps .*com\.docker\.compose\.project=app.*docker stats/,
+				/docker ps .*id=container-1.*com\.docker\.compose\.project=app.*docker stats/,
 			),
 		);
 	});
