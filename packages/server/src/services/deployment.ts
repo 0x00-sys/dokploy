@@ -632,7 +632,9 @@ export const removeDeployment = async (
 	targetServerId?: string | null,
 ) => {
 	try {
-		const deployment = await deleteDeploymentRecord(deploymentId);
+		const deployment = await db.query.deployments.findFirst({
+			where: eq(deployments.deploymentId, deploymentId),
+		});
 
 		if (!deployment) {
 			return null;
@@ -650,7 +652,7 @@ export const removeDeployment = async (
 			}
 		}
 
-		return deployment;
+		return await deleteDeploymentRecord(deploymentId);
 	} catch (error) {
 		const message =
 			error instanceof Error ? error.message : "Error removing the deployment";
@@ -708,38 +710,47 @@ const removeDeploymentsWithLogs = async (
 	deploymentsToDelete: Deployment[],
 	serverId?: string | null,
 ) => {
-	const commands = new Map<string | null, string>();
+	const cleanupGroups = new Map<
+		string | null,
+		{ commands: string[]; deployments: Deployment[] }
+	>();
 	for (const oldDeployment of deploymentsToDelete) {
-		try {
-			if (oldDeployment.rollbackId) {
-				await removeRollbackById(oldDeployment.rollbackId);
-			}
-			const logPath = path.join(oldDeployment.logPath);
-			await deleteDeploymentRecord(oldDeployment.deploymentId);
-			if (logPath !== ".") {
-				const targetServerId =
-					oldDeployment.buildServerId ||
-					oldDeployment.serverId ||
-					serverId ||
-					null;
-				commands.set(
-					targetServerId,
-					`${commands.get(targetServerId) || ""}rm -rf ${logPath};`,
-				);
-			}
-		} catch (err) {
-			console.error(
-				`Failed to remove deployment ${oldDeployment.deploymentId} during cleanup:`,
-				err,
-			);
+		const targetServerId =
+			oldDeployment.buildServerId || oldDeployment.serverId || serverId || null;
+		const group = cleanupGroups.get(targetServerId) ?? {
+			commands: [],
+			deployments: [],
+		};
+		const logPath = path.join(oldDeployment.logPath);
+		if (logPath !== ".") {
+			group.commands.push(`rm -rf ${logPath}`);
 		}
+		group.deployments.push(oldDeployment);
+		cleanupGroups.set(targetServerId, group);
 	}
 
-	for (const [targetServerId, command] of commands) {
-		if (targetServerId) {
-			await execAsyncRemote(targetServerId, command);
-		} else {
-			await execAsync(command);
+	for (const [targetServerId, group] of cleanupGroups) {
+		if (group.commands.length > 0) {
+			const command = group.commands.join(" && ");
+			if (targetServerId) {
+				await execAsyncRemote(targetServerId, command);
+			} else {
+				await execAsync(command);
+			}
+		}
+
+		for (const oldDeployment of group.deployments) {
+			try {
+				if (oldDeployment.rollbackId) {
+					await removeRollbackById(oldDeployment.rollbackId);
+				}
+				await deleteDeploymentRecord(oldDeployment.deploymentId);
+			} catch (err) {
+				console.error(
+					`Failed to remove deployment ${oldDeployment.deploymentId} during cleanup:`,
+					err,
+				);
+			}
 		}
 	}
 };
