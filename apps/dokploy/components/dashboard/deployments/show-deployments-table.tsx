@@ -42,11 +42,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { useCentralizedDeployments } from "@/hooks/use-centralized-deployments";
 import type { AppRouter } from "@/server/api/root";
-import { api } from "@/utils/api";
 
 type DeploymentRow =
-	inferRouterOutputs<AppRouter>["deployment"]["allCentralized"][number];
+	inferRouterOutputs<AppRouter>["deployment"]["centralizedSnapshot"]["items"][number];
 
 const statusVariants: Record<
 	string,
@@ -107,10 +107,7 @@ export function ShowDeploymentsTable() {
 		pageSize: 50,
 	});
 
-	const { data: deploymentsList, isLoading } =
-		api.deployment.allCentralized.useQuery(undefined, {
-			refetchInterval: 5000,
-		});
+	const { data: deploymentsList, isLoading } = useCentralizedDeployments();
 
 	const filteredData = useMemo(() => {
 		if (!deploymentsList) return [];

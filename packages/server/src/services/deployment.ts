@@ -23,7 +23,7 @@ import {
 } from "@dokploy/server/utils/process/execAsync";
 import { TRPCError } from "@trpc/server";
 import { format } from "date-fns";
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import {
 	type Application,
@@ -973,6 +973,59 @@ export const findAllDeploymentsCentralized = async (
 		orderBy: desc(deployments.createdAt),
 		with: centralizedDeploymentsWith,
 	});
+};
+
+export const findDeploymentUpdatesCentralized = async (
+	orgId: string,
+	accessedServices: string[] | null,
+	after: string,
+	deploymentIds: string[],
+) => {
+	if (accessedServices !== null && accessedServices.length === 0) {
+		return { items: [], deploymentIds: [] };
+	}
+
+	const [appIds, compIds] = await Promise.all([
+		getApplicationIdsInOrg(orgId, accessedServices),
+		getComposeIdsInOrg(orgId, accessedServices),
+	]);
+
+	if (appIds.length === 0 && compIds.length === 0) {
+		return { items: [], deploymentIds: [] };
+	}
+
+	const scopeConditions = [
+		...(appIds.length > 0 ? [inArray(deployments.applicationId, appIds)] : []),
+		...(compIds.length > 0 ? [inArray(deployments.composeId, compIds)] : []),
+	];
+	const scope =
+		scopeConditions.length === 1 ? scopeConditions[0] : or(...scopeConditions);
+	const update =
+		deploymentIds.length > 0
+			? or(
+					gte(deployments.createdAt, after),
+					inArray(deployments.deploymentId, deploymentIds),
+				)
+			: gte(deployments.createdAt, after);
+
+	const [items, existingDeployments] = await Promise.all([
+		db.query.deployments.findMany({
+			where: and(scope, update),
+			orderBy: desc(deployments.createdAt),
+			with: centralizedDeploymentsWith,
+		}),
+		db
+			.select({ deploymentId: deployments.deploymentId })
+			.from(deployments)
+			.where(scope),
+	]);
+
+	return {
+		items,
+		deploymentIds: existingDeployments.map(
+			(deployment) => deployment.deploymentId,
+		),
+	};
 };
 
 export const updateDeployment = async (

@@ -6,6 +6,7 @@ import {
 	findAllDeploymentsByServerId,
 	findAllDeploymentsCentralized,
 	findDeploymentById,
+	findDeploymentUpdatesCentralized,
 	findScheduleById,
 	IS_CLOUD,
 	removeDeployment,
@@ -77,6 +78,45 @@ export const deploymentRouter = createTRPCRouter({
 			return findAllDeploymentsCentralized(orgId, accessedServices);
 		},
 	),
+
+	centralizedSnapshot: withPermission("deployment", "read").query(
+		async ({ ctx }) => {
+			const cursor = new Date().toISOString();
+			const orgId = ctx.session.activeOrganizationId;
+			const accessedServices =
+				ctx.user.role !== "owner" && ctx.user.role !== "admin"
+					? (await findMemberByUserId(ctx.user.id, orgId)).accessedServices
+					: null;
+			if (accessedServices !== null && accessedServices.length === 0) {
+				return { cursor, items: [] };
+			}
+			return {
+				cursor,
+				items: await findAllDeploymentsCentralized(orgId, accessedServices),
+			};
+		},
+	),
+
+	centralizedUpdates: withPermission("deployment", "read")
+		.input(
+			z.object({
+				after: z.string().datetime({ offset: true }),
+				deploymentIds: z.array(z.string().min(1)),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			const orgId = ctx.session.activeOrganizationId;
+			const accessedServices =
+				ctx.user.role !== "owner" && ctx.user.role !== "admin"
+					? (await findMemberByUserId(ctx.user.id, orgId)).accessedServices
+					: null;
+			return findDeploymentUpdatesCentralized(
+				orgId,
+				accessedServices,
+				input.after,
+				input.deploymentIds,
+			);
+		}),
 
 	queueList: withPermission("deployment", "read").query(async ({ ctx }) => {
 		const orgId = ctx.session.activeOrganizationId;
