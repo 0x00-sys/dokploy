@@ -12,6 +12,9 @@ export interface Container {
 	Name: string;
 	NetIO: string;
 }
+
+const statsFileUpdates = new Map<string, Promise<void>>();
+
 export const recordAdvancedStats = async (
 	stats: Container,
 	appName: string,
@@ -187,20 +190,34 @@ export const updateStatsFile = async (
 	value: number | string | unknown,
 ) => {
 	const { MONITORING_PATH } = paths();
-	const stats = await readStatsFile(appName, statType);
-	const entry = { value, time: new Date() };
-	stats.push(entry);
+	const filePath = `${MONITORING_PATH}/${appName}/${statType}.json`;
+	const previousUpdate = statsFileUpdates.get(filePath) ?? Promise.resolve();
+	const update = previousUpdate
+		.catch(() => {})
+		.then(async () => {
+			const stats = await readStatsFile(appName, statType);
+			const entry = { value, time: new Date() };
+			stats.push(entry);
 
-	if (stats.length > 288) {
-		stats.shift();
-	}
+			if (stats.length > 288) {
+				stats.shift();
+			}
 
-	const content = JSON.stringify(stats);
-	await promises.writeFile(
-		`${MONITORING_PATH}/${appName}/${statType}.json`,
-		content,
+			await promises.writeFile(filePath, JSON.stringify(stats));
+			return entry;
+		});
+	const completedUpdate = update.then(
+		() => undefined,
+		() => undefined,
 	);
-	return entry;
+	statsFileUpdates.set(filePath, completedUpdate);
+	void completedUpdate.then(() => {
+		if (statsFileUpdates.get(filePath) === completedUpdate) {
+			statsFileUpdates.delete(filePath);
+		}
+	});
+
+	return update;
 };
 
 export const readLastValueStatsFile = async (
