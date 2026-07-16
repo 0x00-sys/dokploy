@@ -43,7 +43,7 @@ type Processor = (job: InMemoryJob) => Promise<void>;
 
 /** Resolve the server whose build-concurrency limit applies to this job. */
 export const getPartition = (data: DeploymentJob): string =>
-	(data.applicationType === "application" ? data.buildServerId : undefined) ??
+	(data.applicationType !== "compose" ? data.buildServerId : undefined) ??
 	data.serverId ??
 	LOCAL_PARTITION;
 

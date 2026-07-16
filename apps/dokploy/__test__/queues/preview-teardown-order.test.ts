@@ -84,7 +84,8 @@ beforeEach(() => {
 	});
 	mocks.findApplicationById.mockResolvedValue({
 		appName: "application",
-		serverId: null,
+		serverId: "runtime-server",
+		buildServerId: "build-server",
 	});
 });
 
@@ -92,4 +93,13 @@ it("tombstones a preview before attempting service cleanup", async () => {
 	await removePreviewDeployment("preview-1");
 
 	expect(mocks.events).toEqual(["delete-preview", "remove-service"]);
+	expect(mocks.removeDeployments).toHaveBeenCalledWith(
+		expect.objectContaining({ previewDeploymentId: "preview-1" }),
+		"build-server",
+		"runtime-server",
+	);
+	expect(mocks.removeDirectory.mock.calls).toEqual([
+		["preview-app", "build-server"],
+		["preview-app", "runtime-server"],
+	]);
 });

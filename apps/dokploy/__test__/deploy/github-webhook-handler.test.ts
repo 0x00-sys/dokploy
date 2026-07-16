@@ -393,7 +393,8 @@ describe("GitHub app webhook auto-deploy", () => {
 			{
 				applicationId: "application-id",
 				name: "Application",
-				serverId: null,
+				serverId: "runtime-server",
+				buildServerId: "build-server",
 				previewLabels: null,
 				previewLimit: 3,
 				previewRequireCollaboratorPermissions: false,
@@ -413,6 +414,7 @@ describe("GitHub app webhook auto-deploy", () => {
 				applicationId: "application-id",
 				applicationType: "application-preview",
 				previewDeploymentId: "existing-preview-id",
+				buildServerId: "build-server",
 			}),
 			expect.any(Object),
 		);

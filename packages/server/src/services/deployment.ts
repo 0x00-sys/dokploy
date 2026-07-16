@@ -212,22 +212,23 @@ export const createDeploymentPreview = async (
 	const previewDeployment = await findPreviewDeploymentById(
 		deployment.previewDeploymentId,
 	);
+	const serverId =
+		previewDeployment.application?.buildServerId ||
+		previewDeployment.application?.serverId;
 	await removeLastTenDeployments(
 		deployment.previewDeploymentId,
 		"previewDeployment",
-		previewDeployment?.application?.serverId,
+		serverId,
 	);
 	try {
 		const appName = `${previewDeployment.appName}`;
-		const { LOGS_PATH } = paths(!!previewDeployment?.application?.serverId);
+		const { LOGS_PATH } = paths(!!serverId);
 		const formattedDateTime = format(new Date(), "yyyy-MM-dd:HH:mm:ss");
 		const fileName = `${appName}-${formattedDateTime}.log`;
 		const logFilePath = path.join(LOGS_PATH, appName, fileName);
 
-		if (previewDeployment?.application?.serverId) {
-			const server = await findServerById(
-				previewDeployment?.application?.serverId,
-			);
+		if (serverId) {
+			const server = await findServerById(serverId);
 
 			const command = `
 				mkdir -p ${LOGS_PATH}/${appName};
@@ -250,7 +251,10 @@ export const createDeploymentPreview = async (
 				logPath: logFilePath,
 				description: deployment.description || "",
 				previewDeploymentId: deployment.previewDeploymentId,
-				...getDeploymentServerFields(previewDeployment.application?.serverId),
+				...getDeploymentServerFields(
+					previewDeployment.application?.serverId,
+					previewDeployment.application?.buildServerId,
+				),
 				startedAt: new Date().toISOString(),
 			})
 			.returning();
@@ -270,7 +274,10 @@ export const createDeploymentPreview = async (
 				status: "error",
 				logPath: "",
 				description: deployment.description || "",
-				...getDeploymentServerFields(previewDeployment.application?.serverId),
+				...getDeploymentServerFields(
+					previewDeployment.application?.serverId,
+					previewDeployment.application?.buildServerId,
+				),
 				errorMessage: `An error have occurred: ${error instanceof Error ? error.message : error}`,
 				startedAt: new Date().toISOString(),
 				finishedAt: new Date().toISOString(),
@@ -758,14 +765,29 @@ const removeLastTenDeployments = async (
 export const removeDeploymentsByPreviewDeploymentId = async (
 	previewDeployment: PreviewDeployment,
 	serverId: string | null,
+	legacyServerId?: string | null,
 ) => {
 	const { appName } = previewDeployment;
-	const { LOGS_PATH } = paths(!!serverId);
-	const logsPath = path.join(LOGS_PATH, appName);
-	if (serverId) {
-		await execAsyncRemote(serverId, `rm -rf ${logsPath}`);
-	} else {
-		await removeDirectoryIfExistsContent(logsPath);
+	const targetServerIds = new Set<string | null>([serverId]);
+	if (legacyServerId !== undefined) {
+		targetServerIds.add(legacyServerId);
+	}
+	const cleanupResults = await Promise.allSettled(
+		[...targetServerIds].map(async (targetServerId) => {
+			const { LOGS_PATH } = paths(!!targetServerId);
+			const logsPath = path.join(LOGS_PATH, appName);
+			if (targetServerId) {
+				await execAsyncRemote(targetServerId, `rm -rf ${logsPath}`);
+			} else {
+				await removeDirectoryIfExistsContent(logsPath);
+			}
+		}),
+	);
+	const cleanupFailure = cleanupResults.find(
+		(result): result is PromiseRejectedResult => result.status === "rejected",
+	);
+	if (cleanupFailure) {
+		throw cleanupFailure.reason;
 	}
 
 	await db
