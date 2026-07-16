@@ -12,15 +12,24 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { api } from "@/utils/api";
 import { type LogLine, parseLogs } from "../../docker/logs/utils";
 import {
 	appendDeploymentLogChunk,
 	createDeploymentLogBuffer,
 	getVisibleDeploymentLogCount,
 } from "./deployment-log-buffer";
+import {
+	type DeploymentLogState,
+	fetchDeploymentLogFallback,
+	getDeploymentLogNotice,
+	resolveDeploymentLogFallback,
+	shouldLoadDeploymentLogFallback,
+} from "./deployment-log-fallback";
 import { VirtualizedDeploymentLogs } from "./virtualized-deployment-logs";
 
 interface Props {
+	deploymentId?: string;
 	logPath: string | null;
 	open: boolean;
 	onClose: () => void;
@@ -32,18 +41,21 @@ export const closeDeploymentLogSocket = (socket: Pick<WebSocket, "close">) =>
 	socket.close();
 
 export const ShowDeployment = ({
+	deploymentId,
 	logPath,
 	open,
 	onClose,
 	serverId,
 	errorMessage,
 }: Props) => {
+	const utils = api.useUtils();
 	const [showExtraLogs, setShowExtraLogs] = useState(false);
 	const logBufferRef = useRef(createDeploymentLogBuffer());
 	const [, setLogVersion] = useState(0);
 	const [autoScroll, setAutoScroll] = useState(true);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [copied, setCopied] = useState(false);
+	const [logState, setLogState] = useState<DeploymentLogState>("loading");
 
 	const handleScroll = () => {
 		if (!scrollRef.current) return;
@@ -58,26 +70,69 @@ export const ShowDeployment = ({
 
 		const logBuffer = createDeploymentLogBuffer();
 		logBufferRef.current = logBuffer;
+		setLogState("loading");
 		setLogVersion((version) => version + 1);
 		const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 
 		const wsUrl = `${protocol}//${window.location.host}/listen-deployment?logPath=${logPath}${serverId ? `&serverId=${serverId}` : ""}`;
 		const ws = new WebSocket(wsUrl);
+		let cancelled = false;
+		let fallbackStarted = false;
+
+		const loadFallback = async () => {
+			if (cancelled || fallbackStarted) return;
+			fallbackStarted = true;
+
+			try {
+				const fallbackBuffer = await fetchDeploymentLogFallback(
+					deploymentId,
+					(input) => utils.deployment.readLogs.fetch(input),
+				);
+				if (cancelled || logBufferRef.current !== logBuffer) return;
+
+				const result = resolveDeploymentLogFallback(logBuffer, fallbackBuffer);
+				if (result.buffer !== logBuffer) {
+					logBufferRef.current = result.buffer;
+					setLogVersion((version) => version + 1);
+				}
+				setLogState(result.state);
+			} catch (error) {
+				console.error("Deployment log fallback error: ", error);
+				if (!cancelled && logBufferRef.current === logBuffer) {
+					setLogState("error");
+				}
+			}
+		};
 
 		ws.onmessage = (e) => {
 			if (logBufferRef.current !== logBuffer) return;
 			appendDeploymentLogChunk(logBuffer, String(e.data));
+			setLogState("streaming");
 			setLogVersion((version) => version + 1);
 		};
 
 		ws.onerror = (error) => {
 			console.error("WebSocket error: ", error);
+			if (shouldLoadDeploymentLogFallback(logBuffer.logs.length > 0)) {
+				void loadFallback();
+			} else if (!cancelled && logBufferRef.current === logBuffer) {
+				setLogState("closed");
+			}
+		};
+
+		ws.onclose = () => {
+			if (shouldLoadDeploymentLogFallback(logBuffer.logs.length > 0)) {
+				void loadFallback();
+			} else if (!cancelled && logBufferRef.current === logBuffer) {
+				setLogState("closed");
+			}
 		};
 
 		return () => {
+			cancelled = true;
 			closeDeploymentLogSocket(ws);
 		};
-	}, [logPath, open, serverId]);
+	}, [deploymentId, logPath, open, serverId, utils]);
 
 	const logs = logBufferRef.current.logs;
 	const visibleLogCount = getVisibleDeploymentLogCount(
@@ -107,6 +162,7 @@ export const ShowDeployment = ({
 	const displayedLogs = visibleLogCount > 0 ? logs : optionalErrors;
 	const displayedLogCount =
 		visibleLogCount > 0 ? visibleLogCount : optionalErrors.length;
+	const logNotice = getDeploymentLogNotice(logState, displayedLogs.length > 0);
 
 	return (
 		<Dialog
@@ -168,6 +224,17 @@ export const ShowDeployment = ({
 						)}
 					</DialogDescription>
 				</DialogHeader>
+				{logNotice && (
+					<output
+						className={
+							logState === "error"
+								? "text-sm text-destructive"
+								: "text-sm text-yellow-600 dark:text-yellow-400"
+						}
+					>
+						{logNotice}
+					</output>
+				)}
 
 				<div
 					ref={scrollRef}
@@ -182,6 +249,11 @@ export const ShowDeployment = ({
 							scrollRef={scrollRef}
 							autoScroll={autoScroll}
 						/>
+					) : logState === "error" ? (
+						<div className="flex justify-center items-center h-full text-sm text-muted-foreground text-center">
+							Unable to load deployment logs. Check the connection and try
+							again.
+						</div>
 					) : (
 						<div className="flex justify-center items-center h-full text-muted-foreground">
 							<Loader2 className="h-6 w-6 animate-spin" />
