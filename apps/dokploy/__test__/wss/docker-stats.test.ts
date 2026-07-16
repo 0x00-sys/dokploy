@@ -105,6 +105,54 @@ describe("Docker stats monitoring", () => {
 		expect(mocks.listContainers).toHaveBeenCalledTimes(2);
 	});
 
+	it("shares one poll across viewers of the same monitoring target", async () => {
+		mocks.listContainers.mockResolvedValue([
+			{ Id: "container-1", State: "running" },
+		]);
+
+		setupDockerStatsMonitoringSocketServer({ on: vi.fn() } as never);
+		const connection = mocks.wssHandlers.get("connection");
+		const sockets = Array.from({ length: 8 }, () => {
+			const handlers = new Map<string, () => void>();
+			return {
+				handlers,
+				ws: {
+					on: vi.fn((event: string, handler: () => void) => {
+						handlers.set(event, handler);
+					}),
+					send: vi.fn(),
+					close: vi.fn(() => handlers.get("close")?.()),
+				},
+			};
+		});
+
+		await Promise.all(
+			sockets.map(({ ws }) =>
+				connection?.(ws, {
+					url: "/listen-docker-stats-monitoring?appName=app&appType=docker-compose",
+					headers: { host: "localhost" },
+				}),
+			),
+		);
+
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(1300);
+		await flush();
+
+		expect(mocks.listContainers).toHaveBeenCalledOnce();
+		for (const { ws } of sockets) {
+			expect(ws.send).toHaveBeenCalledOnce();
+		}
+
+		for (const { handlers } of sockets.slice(0, -1)) {
+			handlers.get("close")?.();
+		}
+		expect(vi.getTimerCount()).toBe(1);
+
+		sockets.at(-1)?.handlers.get("close")?.();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	it("does not start polling when the socket closes during authentication", async () => {
 		let resolveAuthentication!: (value: {
 			user: { id: string };
