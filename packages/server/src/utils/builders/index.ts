@@ -1,3 +1,4 @@
+import { resolveServiceNetworks } from "@dokploy/server/services/network";
 import { findRegistryByIdWithCredentials } from "@dokploy/server/services/registry";
 import type { InferResultType } from "@dokploy/server/types/with";
 import type { CreateServiceOptions, Service } from "dockerode";
@@ -238,6 +239,8 @@ export const mechanizeDockerContainer = async (
 
 	const volumesMount = generateVolumeMounts(mounts);
 
+	const resolvedNetworks = await resolveServiceNetworks(application);
+
 	const {
 		HealthCheck,
 		RestartPolicy,
@@ -246,7 +249,6 @@ export const mechanizeDockerContainer = async (
 		Mode,
 		RollbackConfig,
 		UpdateConfig,
-		Networks,
 		StopGracePeriod,
 		EndpointSpec,
 		Ulimits,
@@ -299,7 +301,7 @@ export const mechanizeDockerContainer = async (
 				...(Ulimits && { Ulimits }),
 				Labels,
 			},
-			Networks,
+			Networks: resolvedNetworks,
 			RestartPolicy,
 			Placement,
 			Resources: {

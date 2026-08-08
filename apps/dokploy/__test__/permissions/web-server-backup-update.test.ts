@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	audit: vi.fn(),
 	findBackupById: vi.fn(),
+	findDestinationById: vi.fn(),
 	removeScheduleBackup: vi.fn(),
 	updateBackupById: vi.fn(),
 }));
@@ -12,6 +13,10 @@ vi.mock("@dokploy/server", async (importOriginal) => ({
 	findBackupById: mocks.findBackupById,
 	removeScheduleBackup: mocks.removeScheduleBackup,
 	updateBackupById: mocks.updateBackupById,
+}));
+
+vi.mock("@dokploy/server/services/destination", () => ({
+	findDestinationById: mocks.findDestinationById,
 }));
 
 vi.mock("@/server/api/utils/audit", () => ({ audit: mocks.audit }));
@@ -54,6 +59,7 @@ beforeEach(() => {
 		libsqlId: null,
 		composeId: null,
 	});
+	mocks.findDestinationById.mockResolvedValue({ organizationId: "org-1" });
 });
 
 it("rejects members updating a web-server backup", async () => {

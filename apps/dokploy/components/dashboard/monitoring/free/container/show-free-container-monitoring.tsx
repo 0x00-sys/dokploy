@@ -1,3 +1,4 @@
+import { formatMb } from "@dokploy/server/monitoring/units";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -140,6 +141,8 @@ export const ContainerFreeMonitoring = ({
 	serverId,
 	monitoringTarget,
 }: Props) => {
+	const monitoringServiceId =
+		"serviceId" in monitoringTarget ? monitoringTarget.serviceId : undefined;
 	const { data } = api.application.readAppMonitoring.useQuery(
 		monitoringTarget,
 		{
@@ -192,6 +195,7 @@ export const ContainerFreeMonitoring = ({
 		if (containerId) params.set("containerId", containerId);
 		if (projectName) params.set("projectName", projectName);
 		if (serverId) params.set("serverId", serverId);
+		if (monitoringServiceId) params.set("serviceId", monitoringServiceId);
 		const wsUrl = `${protocol}//${window.location.host}/listen-docker-stats-monitoring?${params}`;
 		const ws = new WebSocket(wsUrl);
 
@@ -224,7 +228,14 @@ export const ContainerFreeMonitoring = ({
 		};
 
 		return () => ws.close();
-	}, [appName, appType, containerId, projectName, serverId]);
+	}, [
+		appName,
+		appType,
+		containerId,
+		projectName,
+		serverId,
+		monitoringServiceId,
+	]);
 
 	return (
 		<div className="rounded-xl bg-background flex flex-col gap-4">
@@ -330,7 +341,7 @@ export const ContainerFreeMonitoring = ({
 					<CardContent>
 						<div className="flex flex-col gap-2 w-full">
 							<span className="text-sm text-muted-foreground">
-								{`Read:  ${currentData.block.value.readMb}  / Write: ${currentData.block.value.writeMb} `}
+								{`Read: ${formatMb(currentData.block.value.readMb)} / Write: ${formatMb(currentData.block.value.writeMb)}`}
 							</span>
 							<DockerBlockChart accumulativeData={accumulativeData.block} />
 						</div>
@@ -343,7 +354,7 @@ export const ContainerFreeMonitoring = ({
 					<CardContent>
 						<div className="flex flex-col gap-2 w-full">
 							<span className="text-sm text-muted-foreground">
-								{`In MB: ${currentData.network.value.inputMb}  / Out MB: ${currentData.network.value.outputMb} `}
+								{`In: ${formatMb(currentData.network.value.inputMb)} / Out: ${formatMb(currentData.network.value.outputMb)}`}
 							</span>
 							<DockerNetworkChart accumulativeData={accumulativeData.network} />
 						</div>

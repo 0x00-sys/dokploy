@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
 		end: vi.fn(),
 	};
 	return {
+		canAccessDockerOverWss: vi.fn(),
 		client,
 		findServerById,
 		spawn,
@@ -31,6 +32,10 @@ const mocks = vi.hoisted(() => {
 		wssHandlers,
 	};
 });
+
+vi.mock("@/server/wss/authorize", () => ({
+	canAccessDockerOverWss: mocks.canAccessDockerOverWss,
+}));
 
 vi.mock("ws", () => ({
 	WebSocketServer: vi.fn(function WebSocketServer() {
@@ -62,6 +67,7 @@ import { setupDockerContainerTerminalWebSocketServer } from "@/server/wss/docker
 beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.wssHandlers.clear();
+	mocks.canAccessDockerOverWss.mockResolvedValue(true);
 	mocks.findServerById.mockResolvedValue({
 		organizationId: "org-1",
 		sshKeyId: "key-1",

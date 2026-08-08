@@ -240,6 +240,7 @@ export const ShowGeneralMysql = ({ mysqlId }: Props) => {
 						</TooltipProvider>
 						<DockerTerminalModal
 							appName={data?.appName || ""}
+							serviceId={data?.mysqlId}
 							serverId={data?.serverId || ""}
 						>
 							<Button

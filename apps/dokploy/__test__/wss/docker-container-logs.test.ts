@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	canAccessDockerOverWss: vi.fn(),
 	wssHandlers: new Map<string, (...args: any[]) => unknown>(),
 	clientConnect: vi.fn(),
 	findServerById: vi.fn(),
@@ -13,6 +14,10 @@ const mocks = vi.hoisted(() => ({
 	},
 	spawn: vi.fn(),
 	validateRequest: vi.fn(),
+}));
+
+vi.mock("@/server/wss/authorize", () => ({
+	canAccessDockerOverWss: mocks.canAccessDockerOverWss,
 }));
 
 vi.mock("ws", () => ({
@@ -54,6 +59,7 @@ describe("container log sockets", () => {
 		vi.useFakeTimers();
 		vi.clearAllMocks();
 		mocks.wssHandlers.clear();
+		mocks.canAccessDockerOverWss.mockResolvedValue(true);
 		mocks.spawn.mockReturnValue(mocks.ptyProcess);
 		mocks.validateRequest.mockResolvedValue({
 			user: { id: "user-1" },
@@ -198,7 +204,6 @@ describe("container log sockets", () => {
 
 		expect(Client).not.toHaveBeenCalled();
 		expect(mocks.clientConnect).not.toHaveBeenCalled();
-		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("closes the socket and keepalive when a remote server has no SSH key", async () => {

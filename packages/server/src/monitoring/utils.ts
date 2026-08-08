@@ -1,6 +1,7 @@
 import { promises } from "node:fs";
 import { OSUtils } from "node-os-utils";
 import { paths } from "../constants";
+import { parseIoToMb } from "./units";
 
 export interface Container {
 	BlockIO: string;
@@ -31,13 +32,13 @@ export const recordAdvancedStats = async (
 	});
 
 	const block = await updateStatsFile(appName, "block", {
-		readMb: stats.BlockIO.split(" ")[0],
-		writeMb: stats.BlockIO.split(" ")[2],
+		readMb: parseIoToMb(stats.BlockIO.split(" ")[0]),
+		writeMb: parseIoToMb(stats.BlockIO.split(" ")[2]),
 	});
 
 	const network = await updateStatsFile(appName, "network", {
-		inputMb: stats.NetIO.split(" ")[0],
-		outputMb: stats.NetIO.split(" ")[2],
+		inputMb: parseIoToMb(stats.NetIO.split(" ")[0]),
+		outputMb: parseIoToMb(stats.NetIO.split(" ")[2]),
 	});
 	let disk: Awaited<ReturnType<typeof updateStatsFile>> | null = null;
 

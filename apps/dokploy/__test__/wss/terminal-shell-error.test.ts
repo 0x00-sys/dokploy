@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	canAccessTerminalOverWss: vi.fn(),
 	end: vi.fn(),
 	findServerById: vi.fn(),
 	wssHandlers: new Map<string, (...args: any[]) => unknown>(),
+}));
+
+vi.mock("@/server/wss/authorize", () => ({
+	canAccessTerminalOverWss: mocks.canAccessTerminalOverWss,
 }));
 
 vi.mock("ws", () => ({
@@ -68,6 +73,7 @@ describe("SSH terminal", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mocks.wssHandlers.clear();
+		mocks.canAccessTerminalOverWss.mockResolvedValue(true);
 		mocks.findServerById.mockResolvedValue({
 			organizationId: "org-1",
 			ipAddress: "192.0.2.1",

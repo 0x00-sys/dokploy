@@ -10,6 +10,7 @@ import {
 	findMongoById,
 	findMySqlById,
 	findPostgresById,
+	findPreviewDeploymentsByApplicationId,
 	findProjectById,
 	findRedisById,
 	getAccessibleServerIds,
@@ -24,6 +25,7 @@ import {
 	removeDeployments,
 	removeDirectoryCode,
 	removeMonitoringDirectory,
+	removePreviewDeployment,
 	removeService,
 	removeTraefikConfig,
 	startConfiguredService,
@@ -310,6 +312,15 @@ export const applicationRouter = createTRPCRouter({
 					code: "UNAUTHORIZED",
 					message: "You are not authorized to delete this application",
 				});
+			}
+
+			const previewDeploymentsList =
+				await findPreviewDeploymentsByApplicationId(input.applicationId);
+
+			for (const previewDeployment of previewDeploymentsList) {
+				try {
+					await removePreviewDeployment(previewDeployment.previewDeploymentId);
+				} catch (_) {}
 			}
 
 			const result = await db

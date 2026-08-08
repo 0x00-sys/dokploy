@@ -4,12 +4,17 @@ const mocks = vi.hoisted(() => ({
 	audit: vi.fn(),
 	createBackup: vi.fn(),
 	findBackupById: vi.fn(),
+	findDestinationById: vi.fn(),
 }));
 
 vi.mock("@dokploy/server", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@dokploy/server")>()),
 	createBackup: mocks.createBackup,
 	findBackupById: mocks.findBackupById,
+}));
+
+vi.mock("@dokploy/server/services/destination", () => ({
+	findDestinationById: mocks.findDestinationById,
 }));
 
 vi.mock("@/server/api/utils/audit", () => ({ audit: mocks.audit }));
@@ -45,6 +50,7 @@ beforeEach(() => {
 		backupId: "backup-1",
 		enabled: false,
 	});
+	mocks.findDestinationById.mockResolvedValue({ organizationId: "org-1" });
 });
 
 it("rejects members before creating a web-server backup", async () => {

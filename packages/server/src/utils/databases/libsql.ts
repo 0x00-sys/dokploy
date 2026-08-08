@@ -1,5 +1,6 @@
 import type { InferResultType } from "@dokploy/server/types/with";
 import type { CreateServiceOptions, PortConfig } from "dockerode";
+import { resolveServiceNetworks } from "../../services/network";
 import {
 	calculateResources,
 	generateBindMounts,
@@ -47,6 +48,8 @@ export const buildLibsql = async (libsql: LibsqlNested) => {
 		env ? `\n${env}` : ""
 	}${sqldNode === "replica" ? `\nSQLD_PRIMARY_URL="${sqldPrimaryUrl}"` : ""}`;
 
+	const resolvedNetworks = await resolveServiceNetworks(libsql);
+
 	const {
 		HealthCheck,
 		RestartPolicy,
@@ -55,7 +58,6 @@ export const buildLibsql = async (libsql: LibsqlNested) => {
 		Mode,
 		RollbackConfig,
 		UpdateConfig,
-		Networks,
 	} = generateConfigContainer(libsql);
 	const resources = calculateResources({
 		memoryLimit,
@@ -97,7 +99,7 @@ export const buildLibsql = async (libsql: LibsqlNested) => {
 					: {}),
 				Labels,
 			},
-			Networks,
+			Networks: resolvedNetworks,
 			RestartPolicy,
 			Placement,
 			Resources: {

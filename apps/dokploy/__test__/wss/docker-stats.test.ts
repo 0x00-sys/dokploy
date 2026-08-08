@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	canAccessDockerOverWss: vi.fn(),
 	wssHandlers: new Map<string, (...args: any[]) => unknown>(),
 	execAsync: vi.fn(),
 	execAsyncRemote: vi.fn(),
@@ -9,6 +10,10 @@ const mocks = vi.hoisted(() => ({
 	listContainers: vi.fn(),
 	recordAdvancedStats: vi.fn<() => Promise<unknown>>(() => Promise.resolve()),
 	validateRequest: vi.fn(),
+}));
+
+vi.mock("@/server/wss/authorize", () => ({
+	canAccessDockerOverWss: mocks.canAccessDockerOverWss,
 }));
 
 vi.mock("ws", () => ({
@@ -54,6 +59,7 @@ describe("Docker stats monitoring", () => {
 		vi.useFakeTimers();
 		vi.clearAllMocks();
 		mocks.wssHandlers.clear();
+		mocks.canAccessDockerOverWss.mockResolvedValue(true);
 		mocks.findServerById.mockResolvedValue({ organizationId: "org-1" });
 		mocks.validateRequest.mockResolvedValue({
 			user: { id: "user-1" },
@@ -274,7 +280,12 @@ describe("Docker stats monitoring", () => {
 		vi.advanceTimersByTime(1300);
 		await flush();
 
-		expect(mocks.findServerById).toHaveBeenCalledWith("server-1");
+		expect(mocks.canAccessDockerOverWss).toHaveBeenCalledWith(
+			{ id: "user-1" },
+			{ activeOrganizationId: "org-1" },
+			"server-1",
+			null,
+		);
 		expect(mocks.execAsyncRemote).toHaveBeenCalledOnce();
 		expect(mocks.execAsyncRemote).toHaveBeenCalledWith(
 			"server-1",
@@ -491,7 +502,7 @@ describe("Docker stats monitoring", () => {
 	});
 
 	it("rejects a remote server from another organization", async () => {
-		mocks.findServerById.mockResolvedValue({ organizationId: "org-2" });
+		mocks.canAccessDockerOverWss.mockResolvedValue(false);
 		const server = { on: vi.fn() };
 		setupDockerStatsMonitoringSocketServer(server as never);
 
@@ -506,7 +517,7 @@ describe("Docker stats monitoring", () => {
 			headers: { host: "localhost" },
 		});
 
-		expect(ws.close).toHaveBeenCalledOnce();
+		expect(ws.close).toHaveBeenCalledWith(4003, "Not authorized");
 		expect(mocks.execAsyncRemote).not.toHaveBeenCalled();
 	});
 });

@@ -3,13 +3,13 @@ import {
 	docker,
 	execAsync,
 	execAsyncRemote,
-	findServerById,
 	getHostSystemStats,
 	IS_CLOUD,
 	recordAdvancedStats,
 	validateRequest,
 } from "@dokploy/server";
 import { type WebSocket, WebSocketServer } from "ws";
+import { canAccessDockerOverWss } from "./authorize";
 import { isValidContainerId } from "./utils";
 
 export const setupDockerStatsMonitoringSocketServer = (
@@ -57,6 +57,7 @@ export const setupDockerStatsMonitoringSocketServer = (
 		const serverId = url.searchParams.get("serverId");
 		const containerId = url.searchParams.get("containerId");
 		const projectName = url.searchParams.get("projectName");
+		const serviceId = url.searchParams.get("serviceId");
 		const appTypeParam = url.searchParams.get("appType") || "application";
 		if (
 			appTypeParam !== "application" &&
@@ -95,12 +96,9 @@ export const setupDockerStatsMonitoringSocketServer = (
 			ws.close();
 			return;
 		}
-		if (serverId) {
-			const server = await findServerById(serverId);
-			if (server.organizationId !== session.activeOrganizationId) {
-				ws.close();
-				return;
-			}
+		if (!(await canAccessDockerOverWss(user, session, serverId, serviceId))) {
+			ws.close(4003, "Not authorized");
+			return;
 		}
 		if (isClosed) return;
 		const pollerKey = JSON.stringify([

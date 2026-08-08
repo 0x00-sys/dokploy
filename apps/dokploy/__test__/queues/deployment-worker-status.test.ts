@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 	deployApplication: vi.fn(),
 	deployCompose: vi.fn(),
 	deployPreviewApplication: vi.fn(),
+	previewDeploymentExists: vi.fn(() => Promise.resolve(true)),
 	rebuildApplication: vi.fn(),
 	rebuildCompose: vi.fn(),
 	rebuildPreviewApplication: vi.fn(),

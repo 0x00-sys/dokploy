@@ -54,19 +54,19 @@ export const ShowEnvironment = ({ applicationId }: Props) => {
 		},
 		resolver: zodResolver(addEnvironmentSchema),
 	});
-	const { isDirty } = form.formState;
-
 	// Watch form values
 	const currentEnv = form.watch("env");
 	const currentBuildArgs = form.watch("buildArgs");
 	const currentBuildSecrets = form.watch("buildSecrets");
 	const currentCreateEnvFile = form.watch("createEnvFile");
+	const { isDirty } = form.formState;
 	const hasChanges =
 		currentEnv !== (data?.env || "") ||
 		currentBuildArgs !== (data?.buildArgs || "") ||
 		currentBuildSecrets !== (data?.buildSecrets || "") ||
 		currentCreateEnvFile !== (data?.createEnvFile ?? true);
 
+	// Skip reset while editing so background refetches don't wipe edits
 	useEffect(() => {
 		if (data && !isDirty) {
 			form.reset({
@@ -76,7 +76,7 @@ export const ShowEnvironment = ({ applicationId }: Props) => {
 				createEnvFile: data.createEnvFile ?? true,
 			});
 		}
-	}, [data, form, isDirty]);
+	}, [data, isDirty, form]);
 
 	const onSubmit = async (formData: EnvironmentSchema) => {
 		mutateAsync({

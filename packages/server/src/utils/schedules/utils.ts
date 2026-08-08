@@ -9,6 +9,7 @@ import {
 } from "@dokploy/server/services/deployment";
 import { findScheduleById } from "@dokploy/server/services/schedule";
 import { scheduledJobs, scheduleJob as scheduleJobNode } from "node-schedule";
+import { quote } from "shell-quote";
 import { getComposeContainer, getServiceContainer } from "../docker/utils";
 import { execAsyncRemote } from "../process/execAsync";
 import { spawnAsync } from "../process/spawnAsync";
@@ -120,11 +121,23 @@ export const runCommand = async (scheduleId: string) => {
 				serverId = compose.serverId || "";
 			}
 			if (!containerId) {
-				throw new Error(
+				const message =
 					scheduleType === "compose"
 						? `No running container found for compose service "${serviceName || "unknown"}"`
-						: "No running container found for this application",
-				);
+						: "No running container found for this application";
+				if (serverId) {
+					await execAsyncRemote(
+						serverId,
+						`echo ${quote([`❌ ${message}`])} >> ${quote([deployment.logPath])}`,
+					);
+				} else {
+					const writeStream = createWriteStream(deployment.logPath, {
+						flags: "a",
+					});
+					writeStream.write(`❌ ${message}\n`);
+					writeStream.end();
+				}
+				throw new Error(message);
 			}
 
 			if (serverId) {
@@ -132,12 +145,12 @@ export const runCommand = async (scheduleId: string) => {
 					serverId,
 					`
 					set -e
-					echo "Running command: docker exec ${containerId} ${shellType} -c '${command}'" >> ${deployment.logPath};
-					docker exec ${containerId} ${shellType} -c '${command}' >> ${deployment.logPath} 2>> ${deployment.logPath} || { 
-						echo "❌ Command failed" >> ${deployment.logPath};
+					echo "Running scheduled command" >> ${quote([deployment.logPath])};
+					docker exec ${quote([containerId])} ${quote([shellType])} -c ${quote([command])} >> ${quote([deployment.logPath])} 2>> ${quote([deployment.logPath])} || {
+						echo "❌ Command failed" >> ${quote([deployment.logPath])};
 						exit 1;
 					}
-					echo "✅ Command executed successfully" >> ${deployment.logPath};
+					echo "✅ Command executed successfully" >> ${quote([deployment.logPath])};
 					`,
 				);
 			} else {
@@ -208,7 +221,7 @@ export const runCommand = async (scheduleId: string) => {
 			const { SCHEDULES_PATH } = paths(true);
 			const fullPath = path.join(SCHEDULES_PATH, appName || "");
 			const command = `
-				set -e
+				set -euo pipefail
 				echo "Running script" >> ${deployment.logPath};
 				bash -o pipefail -c "bash '${fullPath}/script.sh' 2>&1 | tee -a '${deployment.logPath}'" || {
 					echo "❌ Command failed" >> ${deployment.logPath};
