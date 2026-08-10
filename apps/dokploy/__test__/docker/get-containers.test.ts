@@ -51,25 +51,27 @@ describe("getContainersByAppNameMatch", () => {
 		vi.clearAllMocks();
 	});
 
-	it("scopes stack containers by their exact namespace label", async () => {
-		const ownContainer =
-			"CONTAINER ID : own123 | Name: stack-app_web.1 | State: running | Status: Up 1 minute";
-		const prefixCollision =
-			"CONTAINER ID : other456 | Name: stack-app-other_web.1 | State: running | Status: Up 1 minute";
-		vi.mocked(execProcess.execAsync).mockImplementation(async (command) => ({
-			stdout: command.includes("com.docker.stack.namespace=stack-app")
-				? `${ownContainer}\n`
-				: `${ownContainer}\n${prefixCollision}\n`,
+	it("lists stack task containers across swarm nodes", async () => {
+		vi.mocked(execProcess.execAsync).mockResolvedValue({
+			stdout: [
+				"TASK : task123 | Name: stack-app_web.1 | Node: worker-1 | CurrentState: Running 1 minute ago | Error:",
+				"__DOKPLOY_DIVIDER__",
+				"TASK : task123 | ContainerId: abcdef1234567890",
+			].join("\n"),
 			stderr: "",
-		}));
+		});
 
 		await expect(
 			getContainersByAppNameMatch("stack-app", "stack"),
-		).resolves.toEqual([expect.objectContaining({ containerId: "own123" })]);
+		).resolves.toEqual([
+			expect.objectContaining({
+				containerId: "abcdef123456",
+				node: "worker-1",
+				state: "running",
+			}),
+		]);
 		expect(execProcess.execAsync).toHaveBeenCalledWith(
-			expect.stringContaining(
-				"--filter='label=com.docker.stack.namespace=stack-app'",
-			),
+			expect.stringContaining("docker stack ps stack-app"),
 		);
 		expect(execProcess.execAsync).not.toHaveBeenCalledWith(
 			expect.stringContaining("grep"),

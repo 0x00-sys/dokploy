@@ -267,11 +267,14 @@ export const generateBackupCommand = (backup: BackupSchedule) => {
 
 export const getBackupCommand = (
 	backup: BackupSchedule,
-	rcloneCommand: string,
+	rcloneFlags: string[],
+	rcloneDestination: string,
 	logPath: string,
 ) => {
 	const containerSearch = getContainerSearchCommand(backup);
 	const backupCommand = generateBackupCommand(backup);
+	const rcloneCommand = `rclone rcat ${rcloneFlags.join(" ")} "${rcloneDestination}"`;
+	const rcloneDeleteCommand = `rclone deletefile ${rcloneFlags.join(" ")} "${rcloneDestination}"`;
 
 	logger.info(
 		{
@@ -287,25 +290,24 @@ export const getBackupCommand = (
 	set -eo pipefail;
 	echo "[$(date)] Starting backup process..." >> ${logPath};
 	echo "[$(date)] Executing backup command..." >> ${logPath};
-	CONTAINER_ID=$(${containerSearch})
+	CONTAINER_ID=$(${containerSearch});
 
 	if [ -z "$CONTAINER_ID" ]; then
 		echo "[$(date)] ❌ Error: Container not found" >> ${logPath};
 		exit 1;
-	fi
+	fi;
 
 	echo "[$(date)] Container Up: $CONTAINER_ID" >> ${logPath};
+	echo "[$(date)] Starting backup and upload to S3..." >> ${logPath};
 
-	echo "[$(date)] Starting backup upload to S3..." >> ${logPath};
-
-	# Stream one database dump to S3. Keep dump errors out of the backup stream.
-	UPLOAD_OUTPUT=$(${backupCommand} 2>> ${logPath} | ${rcloneCommand} 2>&1 >/dev/null) || {
+	UPLOAD_OUTPUT=$({ ${backupCommand} | ${rcloneCommand}; } 2>&1 >/dev/null) || {
 		echo "[$(date)] ❌ Error: Backup or upload failed" >> ${logPath};
 		echo "Error: $UPLOAD_OUTPUT" >> ${logPath};
+		${rcloneDeleteCommand} >/dev/null 2>&1 || true;
 		exit 1;
-	}
+	};
 
-	echo "[$(date)] ✅ Backup upload to S3 completed successfully" >> ${logPath};
+	echo "[$(date)] ✅ Backup uploaded to S3 successfully" >> ${logPath};
 	echo "Backup done ✅" >> ${logPath};
 	`;
 };

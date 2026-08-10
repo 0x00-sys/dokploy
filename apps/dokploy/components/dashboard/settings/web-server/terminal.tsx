@@ -6,6 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import { AttachAddon } from "@xterm/addon-attach";
 import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { useTheme } from "next-themes";
+import { fixMacOsAltKeys } from "@/lib/terminal-keyboard";
 import { disposeTerminalSession } from "../../docker/terminal/session";
 import { getLocalServerData } from "./local-server-config";
 
@@ -59,6 +60,7 @@ export const Terminal: React.FC<Props> = ({ id, serverId }) => {
 		const addonAttach = new AttachAddon(ws);
 		const clipboardAddon = new ClipboardAddon();
 		term.loadAddon(clipboardAddon);
+		fixMacOsAltKeys(term);
 
 		// @ts-ignore
 		term.open(termRef.current);

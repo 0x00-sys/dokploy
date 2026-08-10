@@ -17,14 +17,18 @@ const postgresBackup = {
 it("streams each database dump to storage exactly once", () => {
 	const command = getBackupCommand(
 		postgresBackup,
-		"rclone rcat :s3:bucket/backup.sql.gz",
+		["--config=/tmp/rclone.conf"],
+		":s3:bucket/backup.sql.gz",
 		"/tmp/backup.log",
 	);
 
 	expect(command.match(/pg_dump/g)).toHaveLength(1);
 	expect(command).not.toContain("BACKUP_OUTPUT");
 	expect(command).toContain(
-		"2>> /tmp/backup.log | rclone rcat :s3:bucket/backup.sql.gz",
+		'| rclone rcat --config=/tmp/rclone.conf ":s3:bucket/backup.sql.gz"',
+	);
+	expect(command).toContain(
+		'rclone deletefile --config=/tmp/rclone.conf ":s3:bucket/backup.sql.gz"',
 	);
 });
 
